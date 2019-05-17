@@ -115,3 +115,5 @@ networkd-don-t-remove-ip-address.patch
 Move-link_check_ready-to-later-in-the-file.patch
 network-set-_configured-flags-to-false-before-reques.patch
 Install-routes-after-addresses-are-ready.patch
+Move-verify_vc_kbmode-to-terminal-util.c-as-vt_verify_kbm.patch
+Add-check-to-switch-VTs-only-between-K_XLATE-or-K_UNICODE.patch
