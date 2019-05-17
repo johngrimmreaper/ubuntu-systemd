@@ -1,3 +1,11 @@
+systemd (239-7ubuntu10.14) cosmic; urgency=medium
+
+  * Add check to switch VTs only between K_XLATE or K_UNICODE.
+    Switching to K_UNICODE from other than L_XLATE can make the keyboard
+    unusable and possibly leak keypresses from X. (LP: #1803993)
+
+ -- Balint Reczey <rbalint@ubuntu.com>  Fri, 17 May 2019 16:14:00 +0200
+
 systemd (239-7ubuntu10.13) cosmic; urgency=medium
 
   [ Ioanna Alifieraki ]
