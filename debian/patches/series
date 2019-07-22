@@ -71,3 +71,4 @@ lp1831787/0003-network-lower-log-level-about-critical-connection.patch
 lp1831787/0004-network-reset-Link-dhcp4_configured-flag-earlier.patch
 lp1831787/0005-network-split-dhcp_lease_lost-into-small-pieces.patch
 lp1835581-src-network-networkd-dhcp4.c-set-prefsrc-for-classle.patch
+lp1668771-resolved-switch-cache-option-to-a-tri-state-option-s.patch
