@@ -1,3 +1,14 @@
+systemd (242-7ubuntu3.1) UNRELEASED; urgency=medium
+
+  * Fix shutdown and related actions from the login screen (LP: #1847896)
+    File: debian/patches/logind-consider-greeter-sessions-suitable-as-display-sess.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=b407dfd8c9dc81594553c27467c35b383333d74c
+  * debian/gbp.conf: Set debian-branch to ubuntu-eoan
+    File: debian/gbp.conf
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=f399ce2cf4701a2dbb4b3505d2dd17a210d62f5c
+
+ -- Balint Reczey <rbalint@ubuntu.com>  Thu, 17 Oct 2019 17:39:43 +0200
+
 systemd (242-7ubuntu3) eoan; urgency=medium
 
   * Fix using domain set by DHCP as search domain (LP: #1846509)
