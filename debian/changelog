@@ -1,4 +1,4 @@
-systemd (242-7ubuntu3.1) UNRELEASED; urgency=medium
+systemd (242-7ubuntu3.1) eoan; urgency=medium
 
   [ Balint Reczey ]
   * Fix shutdown and related actions from the login screen (LP: #1847896)
