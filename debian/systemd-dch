@@ -1,4 +1,4 @@
 #!/bin/sh
 git checkout debian/changelog
-gbp dch --customizations=/home/xnox/bin/wrap_cl.py --no-multimaint-merge --no-multimaint --ignore-branch
+gbp dch --customizations=`realpath $(dirname "${0}")/wrap_cl.py` --no-multimaint-merge --no-multimaint --ignore-branch
 sed 's/^    $//' -i debian/changelog
