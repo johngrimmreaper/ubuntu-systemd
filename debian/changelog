@@ -1,3 +1,29 @@
+systemd (247.3-3ubuntu3.7) UNRELEASED; urgency=medium
+
+  * Fix whitespace in lp1926547-hwdb-60-keyboard-Update-Dell-Privacy-Micmute-Hotkey-.patch to match upstream
+    File: debian/patches/lp1926547-hwdb-60-keyboard-Update-Dell-Privacy-Micmute-Hotkey-.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=4988a455b57da1d1e279ccabb26c8a71fb31ee6b
+  * Support detection for ARM64 Hyper-V guests (LP: #1952599)
+    Files:
+    - debian/patches/lp1952599/0001-virt-Support-detection-for-ARM64-Hyper-V-guests.patch
+    - debian/patches/lp1952599/0002-virt-Fix-the-detection-for-Hyper-V-VMs.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=d728b69efeacfa5625f436c7e3f469416fdc8ec2
+
+  [Andy Chi]
+  * Add privacy micmute hotkey for Dell machine. (LP: #1952733)
+    File: debian/patches/lp1952733-hwdb-60-keyboard-Update-Dell-Privacy-Micmute-Hotkey-Map.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=89e3efb5f7b43c070f14377bb981cb2f1749d61d
+  * Add microphone mute key for Dell machine. (LP: #1952735)
+    File: debian/patches/lp1952735-keymap-Add-microphone-mute-keymap-for-Dell-Machine.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=98ec4a3c8561a1c0e26049a558d51c922ea5e73a
+
+  [Yao Wei]
+  * Add ACCEL_LOCATION=base property for 6 Dell clamshell models (LP: #1943561)
+    File: debian/patches/lp1943561-dell-clamshell-accel-location-base-with-sku.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=1b4c29baf0b4dedabd45608a4cc5785157d1d441
+
+ -- Lukas Märdian <slyon@ubuntu.com>  Thu, 02 Dec 2021 15:41:24 +0100
+
 systemd (247.3-3ubuntu3.6) hirsute; urgency=medium
 
   * d/p/dell-clamshell-accel-location-base-with-sku.patch:
