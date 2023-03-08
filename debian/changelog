@@ -1,3 +1,19 @@
+systemd (251.4-1ubuntu7.2) UNRELEASED; urgency=medium
+
+  * network/dhcp4: accept local subnet routes from DHCP (LP: #2004478)
+    File: debian/patches/lp2004478-network-dhcp4-accept-local-subnet-routes-from-DHCP.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=751bac59b405025964d76c4ef8e0603457a605af
+  * udev: avoid NIC renaming race with kernel (LP: #2002445)
+    Files:
+    - debian/patches/lp2002445/sd-netlink-add-a-test-for-rtnl_set_link_name.patch
+    - debian/patches/lp2002445/sd-netlink-do-not-swap-old-name-and-alternative-name.patch
+    - debian/patches/lp2002445/sd-netlink-restore-altname-on-error-in-rtnl_set_link_name.patch
+    - debian/patches/lp2002445/udev-attempt-device-rename-even-if-interface-is-up.patch
+    - debian/patches/lp2002445/udev-net-allow-new-link-name-as-an-altname-before-renamin.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=ffb1e85fdd3f0fe9b158b28a95cfa6d241fcbe70
+
+ -- Nick Rosbrook <nick.rosbrook@canonical.com>  Wed, 08 Mar 2023 11:21:25 -0500
+
 systemd (251.4-1ubuntu7.1) kinetic-security; urgency=medium
 
   * SECURITY UPDATE: information leak vulnerability in systemd-coredump
