@@ -1,0 +1,62 @@
+From: Xi Ruoyao <xry111@xry111.site>
+Date: Wed, 10 May 2023 01:41:28 +0800
+Subject: sd-bus: bus_message_type_from_string is not pure
+
+Origin: upstream, https://github.com/systemd/systemd-stable/commit/bf2f71a0615b3831f170728760171d8bfb13fc5e
+Bug-Ubuntu: https://launchpad.net/bugs/2031683
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+GCC document [1] says:
+
+    The pure attribute prohibits a function from modifying the state
+    of the program that is observable by means other than inspecting
+    the function’s return value.
+
+And there is an example:
+
+    `int hash (char *) __attribute__ ((pure));`
+    ... Even though hash takes a non-const pointer argument it must
+    not modify the array it points to, ...
+
+But we are modifying the object pointed to by the pointer u, which is
+clearly a violation of the semantic of pure.
+
+With -ftrivial-auto-var-init (enabled by -Dmode=release), on some
+targets (GCC 12.2 on AArch64 and GCC 13.1 on x86_64) performs an
+optimization: as the variable "u" in bus_match_parse has been
+zero-initialized (by the -ftrivial-auto-var-init option) and never
+modified (because a "pure" bus_message_type_from_string is not allowed
+to modify it), "u" will be always 0.
+
+Then 0 is used to initialize .value_u8 field of struct
+bus_match_component.  This then causes a infinite event loop, so
+"systemctl restart" never stops, and pam_systemd timeouts communicating
+with logind, etc.
+
+So we should remove the "pure" attribute here.
+
+Fixes #26395.
+
+[1]:https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html#index-pure-function-attribute
+
+(cherry picked from commit 6723c28f36ea566faf61d3610012cd89f95ee4a0)
+(cherry picked from commit 59dccdfddbdde5d4ff047108a545106f2bac6872)
+---
+ src/libsystemd/sd-bus/bus-internal.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/libsystemd/sd-bus/bus-internal.h b/src/libsystemd/sd-bus/bus-internal.h
+index 51673ad1..d486e17 100644
+--- a/src/libsystemd/sd-bus/bus-internal.h
++++ b/src/libsystemd/sd-bus/bus-internal.h
+@@ -361,7 +361,7 @@ bool path_complex_pattern(const char *pattern, const char *value) _pure_;
+ bool namespace_simple_pattern(const char *pattern, const char *value) _pure_;
+ bool path_simple_pattern(const char *pattern, const char *value) _pure_;
+
+-int bus_message_type_from_string(const char *s, uint8_t *u) _pure_;
++int bus_message_type_from_string(const char *s, uint8_t *u);
+ const char *bus_message_type_to_string(uint8_t u) _pure_;
+
+ #define error_name_is_valid interface_name_is_valid
