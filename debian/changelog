@@ -1,3 +1,31 @@
+systemd (252.5-2ubuntu3.1) UNRELEASED; urgency=medium
+
+  * debian/tests/tests-in-lxd: use --reuse flag in lxc publish (LP: #2023229)
+    File: debian/tests/tests-in-lxd
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=2a443ddd5b67596647e463eee64d58c3c71bbf08
+  * udev-rules: fix nvme symlink creation on namespace changes (LP: #2028180)
+    File: debian/patches/lp2028180-udev-rules-fix-nvme-symlink-creation-on-namespace-changes.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=064c7c00aa133b697ab3c0082b825e2f197f91cc
+  * core: reorder systemd arguments on reexec (LP: #2013543)
+    File: debian/patches/lp2013543-core-reorder-systemd-arguments-on-reexec.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=45541ccbc16ed30b6a120cda7401f69cce164d54
+  * network/dhcp4: do not ignore the gateway even if the destination is in same network (LP: #2009743)
+    Files:
+    - debian/patches/lp2009743/network-dhcp4-do-not-ignore-the-gateway-even-if-the-desti.patch
+    - debian/patches/lp2009743/test-network-add-one-more-testcase-for-DHCPv4-classless-r.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=ddea3bcbca3421299b13cfe897157cfbf9f0f06d
+  * debian/systemd.postint: do not daemon re-exec if we could hit LP: #2013543
+    File: debian/systemd.postinst
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=e1a08bb427e19ced6c16f054ebdee43ccbc9c528
+  * Drop debian/UBUNTU-wait-online-exit-if-no-links-are-managed.patch (LP: #1982218)
+    File: debian/patches/debian/UBUNTU-wait-online-exit-if-no-links-are-managed.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=8235427fd8859ee393a08d425e1a52e1ebcbe2f1
+  * sd-bus: bus_message_type_from_string is not pure (LP: #2031683)
+    File: debian/patches/lp2031683-sd-bus-bus_message_type_from_string-is-not-pure.patch
+    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=2d65b6c74864976a2bb42c884baf75d1674215fc
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Fri, 18 Aug 2023 14:13:52 -0400
+
 systemd (252.5-2ubuntu3) lunar; urgency=medium
 
   * udev: gracefully handle rename failures (LP: #2002445)
