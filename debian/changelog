@@ -1,4 +1,4 @@
-systemd (252.5-2ubuntu3.1) UNRELEASED; urgency=medium
+systemd (252.5-2ubuntu3.1) lunar; urgency=medium
 
   * debian/tests/tests-in-lxd: use --reuse flag in lxc publish (LP: #2023229)
     File: debian/tests/tests-in-lxd
@@ -24,7 +24,7 @@ systemd (252.5-2ubuntu3.1) UNRELEASED; urgency=medium
     File: debian/patches/lp2031683-sd-bus-bus_message_type_from_string-is-not-pure.patch
     https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=2d65b6c74864976a2bb42c884baf75d1674215fc
 
- -- Nick Rosbrook <enr0n@ubuntu.com>  Fri, 18 Aug 2023 14:13:52 -0400
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Fri, 18 Aug 2023 14:15:03 -0400
 
 systemd (252.5-2ubuntu3) lunar; urgency=medium
 
