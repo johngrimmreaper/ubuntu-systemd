@@ -61,3 +61,4 @@ lp2013543-core-reorder-systemd-arguments-on-reexec.patch
 lp2009743/network-dhcp4-do-not-ignore-the-gateway-even-if-the-desti.patch
 lp2009743/test-network-add-one-more-testcase-for-DHCPv4-classless-r.patch
 lp2031683-sd-bus-bus_message_type_from_string-is-not-pure.patch
+lp2036358-wait-online-exit-early-if-all-links-are-ignored.patch
