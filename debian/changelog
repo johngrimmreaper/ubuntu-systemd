@@ -1,10 +1,10 @@
-systemd (252.5-2ubuntu3.2) UNRELEASED; urgency=medium
+systemd (252.5-2ubuntu3.2) lunar; urgency=medium
 
   * wait-online: exit early if all links are ignored (LP: #2036358)
     File: debian/patches/lp2036358-wait-online-exit-early-if-all-links-are-ignored.patch
     https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=0b8b372b449c9b3cfbf556bbe5375da99b5735db
 
- -- Nick Rosbrook <enr0n@ubuntu.com>  Tue, 19 Sep 2023 12:50:06 -0400
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Tue, 19 Sep 2023 12:50:07 -0400
 
 systemd (252.5-2ubuntu3.1) lunar; urgency=medium
 
