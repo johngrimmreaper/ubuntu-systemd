@@ -1,23 +1,10 @@
-systemd (253.5-1ubuntu7) UNRELEASED; urgency=medium
+systemd (253.5-1ubuntu6.1) mantic; urgency=medium
 
   * Revert "debian/rules: set MulticastDNS=resolve by default" (LP: #2038894)
     File: debian/rules
     https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=3d753238699f54e8c2892d8107136d49f09e44b6
-  * Update changelog
-    File: debian/changelog
-    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=ee5bcfe4da66df0ec1044b31fc7f903a897798d3
-  * Release systemd 253.5-1ubuntu7
-    File: debian/changelog
-    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=7080632d38546992d02fddc32444eec361023262
-  * Revert "Release systemd 253.5-1ubuntu7"
-    This reverts commits 7080632d38546992d02fddc32444eec361023262 and
-    7080632d38546992d02fddc32444eec361023262.
-    Now that noble is open, it makes more sense to upload this as
-    253.5-1ubuntu6.1.
-    File: debian/changelog
-    https://git.launchpad.net/~ubuntu-core-dev/ubuntu/+source/systemd/commit/?id=b9caf9945d26b5ade3c3e2cc86074d3e51ff6828
 
- -- Nick Rosbrook <enr0n@ubuntu.com>  Thu, 26 Oct 2023 09:55:40 -0400
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Thu, 26 Oct 2023 09:55:41 -0400
 
 systemd (253.5-1ubuntu6) mantic; urgency=medium
 
