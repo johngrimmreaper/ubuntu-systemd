@@ -1,3 +1,12 @@
+systemd (256.5-2ubuntu3.1) oracular; urgency=medium
+
+  * Make sure systemd-cryptsetup is pulled in by systemd on install/upgrade
+    (LP: #2084251)
+    - d/control: make systemd-cryptsetup Priority: important
+    - d/control: make systemd Recommends: systemd-cryptsetup again
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Wed, 16 Oct 2024 13:01:05 -0400
+
 systemd (256.5-2ubuntu3) oracular; urgency=medium
 
   * d/control: demote systemd-cryptsetup from Recommends: to Suggests: of systemd
