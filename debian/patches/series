@@ -5,3 +5,4 @@ lp2098183/0001-json-extend-JsonDispatch-flags-with-nullable-and-ref.patch
 lp2098183/0002-json-util-Add-JSON_BUILD_PAIR_BYTE_ARRAY_NON_EMPTY.patch
 lp2098183/0003-network-process-queued-remove-requests-before-networ.patch
 lp2098183/0004-json-util-generalize-json_dispatch_ifindex.patch
+lp2098183/0005-daemon-util-expose-notify_push_fd.patch

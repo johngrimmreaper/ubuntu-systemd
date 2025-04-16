@@ -1,0 +1,30 @@
+From: Yu Watanabe <watanabe.yu+github@gmail.com>
+Date: Sat Nov 2 05:57:46 2024 +0900
+Subject: daemon-util: expose notify_push_fd()
+
+It will be used in a later commit.
+
+Bug-Ubuntu: https://launchpad.net/bugs/2098183
+Origin: upstream, https://github.com/systemd/systemd/commit/20465bcb1eff8ccd9f5feb0364244ad314ec12a2
+
+--- systemd-256.5.orig/src/shared/daemon-util.c
++++ systemd-256.5/src/shared/daemon-util.c
+@@ -45,7 +45,7 @@ int close_and_notify_warn(int fd, const
+         return safe_close(fd);
+ }
+ 
+-static int notify_push_fd(int fd, const char *name) {
++int notify_push_fd(int fd, const char *name) {
+         _cleanup_free_ char *state = NULL;
+ 
+         assert(fd >= 0);
+--- systemd-256.5.orig/src/shared/daemon-util.h
++++ systemd-256.5/src/shared/daemon-util.h
+@@ -25,6 +25,7 @@ static inline void notify_on_cleanup(con
+ 
+ int notify_remove_fd_warnf(const char *format, ...) _printf_(1, 2);
+ int close_and_notify_warn(int fd, const char *name);
++int notify_push_fd(int fd, const char *name);
+ int notify_push_fdf(int fd, const char *format, ...) _printf_(2, 3);
+ 
+ int notify_reloading_full(const char *status);
