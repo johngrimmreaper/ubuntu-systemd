@@ -7,3 +7,4 @@ lp2098183/0003-network-process-queued-remove-requests-before-networ.patch
 lp2098183/0004-json-util-generalize-json_dispatch_ifindex.patch
 lp2098183/0005-daemon-util-expose-notify_push_fd.patch
 lp2098183/0006-network-json-add-missing-entries-for-route-propertie.patch
+lp2098183/0007-network-introduce-network_config_source_from_string.patch
