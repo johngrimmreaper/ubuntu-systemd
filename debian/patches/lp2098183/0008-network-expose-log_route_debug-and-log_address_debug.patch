@@ -1,0 +1,53 @@
+From: Yu Watanabe <watanabe.yu+github@gmail.com>
+Date: Sat Nov 2 18:32:02 2024 +0900
+Subject: network: expose log_route_debug() and log_address_debug()
+
+They will be used in another file in a later commit.
+
+Bug-Ubuntu: https://launchpad.net/bugs/2098183
+Origin: upstream, https://github.com/systemd/systemd/commit/2afd12e0a1c5710c4b380067a6a022efcbfacf99
+
+--- systemd-256.5.orig/src/network/networkd-address.c
++++ systemd-256.5/src/network/networkd-address.c
+@@ -1095,7 +1095,7 @@ const char* format_lifetime(char *buf, s
+         return buf;
+ }
+ 
+-static void log_address_debug(const Address *address, const char *str, const Link *link) {
++void log_address_debug(const Address *address, const char *str, const Link *link) {
+         _cleanup_free_ char *state = NULL, *flags_str = NULL, *scope_str = NULL;
+ 
+         assert(address);
+--- systemd-256.5.orig/src/network/networkd-address.h
++++ systemd-256.5/src/network/networkd-address.h
+@@ -73,6 +73,8 @@ struct Address {
+         NFTSetContext nft_set_context;
+ };
+ 
++void log_address_debug(const Address *address, const char *str, const Link *link);
++
+ const char* format_lifetime(char *buf, size_t l, usec_t lifetime_usec) _warn_unused_result_;
+ /* Note: the lifetime of the compound literal is the immediately surrounding block,
+  * see C11 §6.5.2.5, and
+--- systemd-256.5.orig/src/network/networkd-route.c
++++ systemd-256.5/src/network/networkd-route.c
+@@ -406,7 +406,7 @@ int route_dup(const Route *src, const Ro
+         return 0;
+ }
+ 
+-static void log_route_debug(const Route *route, const char *str, Manager *manager) {
++void log_route_debug(const Route *route, const char *str, Manager *manager) {
+         _cleanup_free_ char *state = NULL, *nexthop = NULL, *prefsrc = NULL,
+                 *table = NULL, *scope = NULL, *proto = NULL, *flags = NULL;
+         const char *dst, *src;
+--- systemd-256.5.orig/src/network/networkd-route.h
++++ systemd-256.5/src/network/networkd-route.h
+@@ -80,6 +80,8 @@ struct Route {
+         int gateway_onlink;
+ };
+ 
++void log_route_debug(const Route *route, const char *str, Manager *manager);
++
+ extern const struct hash_ops route_hash_ops;
+ extern const struct hash_ops route_hash_ops_unref;
+ 
