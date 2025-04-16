@@ -1,0 +1,69 @@
+From: Yu Watanabe <watanabe.yu+github@gmail.com>
+Date: Thu Nov 7 03:43:50 2024 +0900
+Subject: network: keep all dynamically acquired configurations when KeepConfiguration=dhcp-on-stop
+
+By the previous commit, configuration source of addresses and routes are
+saved on stop and restored on start. Hence, we can keep dynamic
+configurations on stop.
+
+Co-authored-by: Jian Zhang <zhangjian.3032@bytedance.com>
+
+Bug-Ubuntu: https://launchpad.net/bugs/2098183
+Origin: upstream, https://github.com/systemd/systemd/commit/4eca221ab8d1ce3b95596aef5b56e784d18d41cc
+
+--- systemd-256.5.orig/src/network/networkd-link.c
++++ systemd-256.5/src/network/networkd-link.c
+@@ -383,6 +383,24 @@ int link_stop_engines(Link *link, bool m
+                 r = sd_dhcp_client_stop(link->dhcp_client);
+                 if (r < 0)
+                         RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCPv4 client: %m"));
++
++                r = sd_ipv4ll_stop(link->ipv4ll);
++                if (r < 0)
++                        RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv4 link-local: %m"));
++
++                r = sd_dhcp6_client_stop(link->dhcp6_client);
++                if (r < 0)
++                        RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCPv6 client: %m"));
++
++                r = dhcp_pd_remove(link, /* only_marked = */ false);
++                if (r < 0)
++                        RET_GATHER(ret, log_link_warning_errno(link, r, "Could not remove DHCPv6 PD addresses and routes: %m"));
++
++                r = ndisc_stop(link);
++                if (r < 0)
++                        RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv6 Router Discovery: %m"));
++
++                ndisc_flush(link);
+         }
+ 
+         r = sd_dhcp_server_stop(link->dhcp_server);
+@@ -397,28 +415,10 @@ int link_stop_engines(Link *link, bool m
+         if (r < 0)
+                 RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop LLDP Tx: %m"));
+ 
+-        r = sd_ipv4ll_stop(link->ipv4ll);
+-        if (r < 0)
+-                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv4 link-local: %m"));
+-
+         r = ipv4acd_stop(link);
+         if (r < 0)
+                 RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv4 ACD client: %m"));
+ 
+-        r = sd_dhcp6_client_stop(link->dhcp6_client);
+-        if (r < 0)
+-                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCPv6 client: %m"));
+-
+-        r = dhcp_pd_remove(link, /* only_marked = */ false);
+-        if (r < 0)
+-                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not remove DHCPv6 PD addresses and routes: %m"));
+-
+-        r = ndisc_stop(link);
+-        if (r < 0)
+-                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv6 Router Discovery: %m"));
+-
+-        ndisc_flush(link);
+-
+         r = sd_radv_stop(link->radv);
+         if (r < 0)
+                 RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv6 Router Advertisement: %m"));
