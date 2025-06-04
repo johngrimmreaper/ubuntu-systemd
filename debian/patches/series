@@ -9,4 +9,10 @@ wait-online/wait-online-add-support-for-waiting-for-DNS-configuration.patch
 wait-online/test-add-test-for-resolved-SubscribeDNSConfiguration-API.patch
 wait-online/networkd-test-add-basic-tests-for-systemd-networkd-wait-o.patch
 lp2104943-test-network-add-handling-for-Ubuntu-FAN-patches.patch
-lp2110585-drop-support-actual-brightness.patch
+coredump-old-pattern-compat.patch
+CVE_2025_4598_1.patch
+CVE_2025_4598_2.patch
+CVE_2025_4598_3.patch
+CVE_2025_4598_4.patch
+CVE_2025_4598_5.patch
+CVE_2025_4598_6.patch
