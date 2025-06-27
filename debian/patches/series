@@ -20,3 +20,4 @@ lp2111107/manager-explicitly-create-our-private-runtime-directory.patch
 lp2111107/analyze-don-t-connect-to-bus-from-analyze-test-run.patch
 lp2111107/pid1-don-t-connect-to-oomd-in-test-runs.patch
 lp2110585-drop-support-actual-brightness.patch
+lp2115418-network-dhcp6-consider-the-DHCPv6-protocol-as-finish.patch
