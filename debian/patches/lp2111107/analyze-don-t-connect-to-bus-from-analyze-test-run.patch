@@ -1,0 +1,29 @@
+From: Lennart Poettering <lennart@poettering.net>
+Date: Wed, 12 Mar 2025 18:19:34 +0100
+Subject: analyze: don't connect to bus from analyze test run
+
+Bug-Ubuntu: https://launchpad.net/bugs/2111107
+Origin: https://github.com/systemd/systemd/commit/e707d0459cb0143cdd449362ae372173143b970f
+
+This thing should not be "live", hence don't try to connect to the bus,
+or bind the private bus socket.
+
+Fixes: #36540
+---
+ src/core/manager.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/core/manager.c b/src/core/manager.c
+index f574f5b..9308b73 100644
+--- a/src/core/manager.c
++++ b/src/core/manager.c
+@@ -1962,6 +1962,9 @@ static bool manager_dbus_is_running(Manager *m, bool deserialized) {
+ static void manager_setup_bus(Manager *m) {
+         assert(m);
+
++        if (MANAGER_IS_TEST_RUN(m))
++                return;
++
+         /* Let's set up our private bus connection now, unconditionally */
+         (void) bus_init_private(m);
+
