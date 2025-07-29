@@ -13,7 +13,7 @@ systemd (257.4-1ubuntu3.2) plucky; urgency=medium
   * network/dhcp6: consider the DHCPv6 protocol as finished when conflict addresses exist
     (LP: #2115418)
 
- -- Ural Tunaboyu <ural.tunaboyu@canonical.com>  Fri, 18 Jul 2025 13:45:06 -0700
+ -- Ural Tunaboyu <ural.tunaboyu@canonical.com>  Tue, 29 Jul 2025 09:20:02 -0400
 
 systemd (257.4-1ubuntu3.1) plucky-security; urgency=medium
 
