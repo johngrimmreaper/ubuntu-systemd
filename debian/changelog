@@ -1,3 +1,10 @@
+systemd (257.9-0ubuntu2.1) questing; urgency=medium
+
+  * net_id: depending on new udev prop, include/exclude PCI domain from netif names
+    (LP: #2134334)
+
+ -- Robert Malz <robert.malz@canonical.com>  Mon, 08 Dec 2025 09:30:21 -0500
+
 systemd (257.9-0ubuntu2) questing; urgency=medium
 
   * basic: validate timezones in get_timezones() (LP: #2125405)
