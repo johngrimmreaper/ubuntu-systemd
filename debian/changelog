@@ -1,3 +1,9 @@
+systemd (257.9-0ubuntu2.4) questing; urgency=medium
+
+  * timer: don't run service immediately after restart of a timer (LP: #2141296)
+
+ -- Ioana Lazea <ioana.lazea@canonical.com>  Tue, 24 Mar 2026 09:37:00 -0400
+
 systemd (257.9-0ubuntu2.3) questing-security; urgency=medium
 
   * SECURITY UPDATE: Local unprivileged user can trigger an assert in systemd
