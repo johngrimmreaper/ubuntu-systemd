@@ -1,3 +1,11 @@
+systemd (259.5-0ubuntu4) stonking; urgency=medium
+
+  * debian/gbp.conf: update for stonking
+  * core: Open netfilter socket only when needed (LP: #2150773)
+  * units: order networkd resolve hook After=network-pre.target (LP: #2148619)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Wed, 20 May 2026 16:19:17 -0400
+
 systemd (259.5-0ubuntu3) resolute; urgency=medium
 
   * Drop needs-internet restriction and fix test failures masked by this (LP: #2148202)
