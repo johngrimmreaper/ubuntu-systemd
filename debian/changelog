@@ -1,3 +1,10 @@
+systemd (259.5-0ubuntu3.1) resolute; urgency=medium
+
+  * core: Open netfilter socket only when needed (LP: #2150773)
+  * units: order networkd resolve hook After=network-pre.target (LP: #2148619)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Fri, 22 May 2026 15:23:29 -0400
+
 systemd (259.5-0ubuntu3) resolute; urgency=medium
 
   * Drop needs-internet restriction and fix test failures masked by this (LP: #2148202)
