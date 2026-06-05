@@ -1,3 +1,18 @@
+systemd (249.11-0ubuntu3.21) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: MITM via DNSSEC-signed domains with no signature
+    - debian/patches/CVE-2023-7008.patch: resolved: actually check authenticated
+      flag of SOA transaction in src/resolve/resolved-dns-transaction.c.
+    - CVE-2023-7008
+  * SECURITY UPDATE: escape-to-host via malformed optional config file
+    - debian/patches/CVE-2026-40226-1.patch: nspawn: apply BindUser/Ephemeral
+      from settings file only if trusted in src/nspawn/nspawn.c.
+    - debian/patches/CVE-2026-40226-2.patch: nspawn: normalize pivot_root paths
+      in src/nspawn/nspawn-mount.c.
+    - CVE-2026-40226
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 05 Jun 2026 11:40:28 -0400
+
 systemd (249.11-0ubuntu3.20) jammy; urgency=medium
 
   * net_id: depending on new udev prop, include/exclude PCI domain from netif names
