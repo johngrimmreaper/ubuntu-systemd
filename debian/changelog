@@ -1,3 +1,14 @@
+systemd (255.4-1ubuntu8.16) noble-security; urgency=medium
+
+  * SECURITY UPDATE: escape-to-host via malformed optional config file
+    - debian/patches/CVE-2026-40226-1.patch: nspawn: apply BindUser/Ephemeral
+      from settings file only if trusted in src/nspawn/nspawn.c.
+    - debian/patches/CVE-2026-40226-2.patch: nspawn: normalize pivot_root paths
+      in src/nspawn/nspawn-mount.c.
+    - CVE-2026-40226
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 05 Jun 2026 11:36:29 -0400
+
 systemd (255.4-1ubuntu8.15) noble; urgency=medium
 
   [ Robert Malz ]
