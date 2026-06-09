@@ -1,3 +1,14 @@
+systemd (259.5-0ubuntu3.1) resolute; urgency=medium
+
+  * Fix cloud-init delay caused by systemd-networkd resolve hook (LP: #2148619)
+    - units: order networkd resolve hook After=network-pre.target
+    - units: drop Before=sockets.target from networkd resolve hook
+  * core: Open netfilter socket only when needed (LP: #2150773)
+  * mkosi: trim verity.sig json files to remove NUL padding before passing to jq
+    (LP: #2155132)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Tue, 09 Jun 2026 08:59:25 -0400
+
 systemd (259.5-0ubuntu3) resolute; urgency=medium
 
   * Drop needs-internet restriction and fix test failures masked by this (LP: #2148202)
