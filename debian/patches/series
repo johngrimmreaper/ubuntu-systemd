@@ -4,4 +4,3 @@ lp2136413-test-skip-TEST-13-NSPAWN.machined.patch
 lp2077538/udev-Trigger-uaccess-builtin-on-xaccess-prefix.patch
 lp2077538/Move-new-symbol-out-of-public-library.patch
 test-use-gnuenv-to-workaround-broken-block-signal.patch
-tmpfiles-remove-duplicate-run-lock-definition.patch
