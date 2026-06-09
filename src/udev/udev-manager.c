@@ -470,7 +470,7 @@ static Event* worker_detach_event(Worker *worker) {
         return event;
 }
 
-static int on_sigchld(sd_event_source *s, const siginfo_t *si, void *userdata) {
+static int on_worker_exit(sd_event_source *s, const siginfo_t *si, void *userdata) {
         _cleanup_(worker_freep) Worker *worker = ASSERT_PTR(userdata);
         _cleanup_(event_enter_processedp) Event *event = worker_detach_event(worker);
         sd_device *dev = event ? ASSERT_PTR(event->dev) : NULL;
@@ -533,11 +533,11 @@ static int worker_new(Worker **ret, Manager *manager, sd_device_monitor *worker_
         if (r < 0)
                 return r;
 
-        r = event_add_child_pidref(manager->event, &worker->child_event_source, &worker->pidref, WEXITED, on_sigchld, worker);
+        r = event_add_child_pidref(manager->event, &worker->child_event_source, &worker->pidref, WEXITED, on_worker_exit, worker);
         if (r < 0)
                 return r;
 
-        r = sd_event_source_set_priority(worker->child_event_source, EVENT_PRIORITY_WORKER_SIGCHLD);
+        r = sd_event_source_set_priority(worker->child_event_source, EVENT_PRIORITY_WORKER_EXIT);
         if (r < 0)
                 return r;
 
@@ -631,8 +631,13 @@ static int event_run(Event *event) {
                 return 0;
         }
 
+        /* No idle worker could accept the event. If we already reached the worker limit, e.g. because
+         * we just killed the only idle worker above, leave the event queued and wait for SIGCHLD of an
+         * exiting worker to free up a slot. on_post() will retry processing the queue. */
+        if (hashmap_size(manager->workers) >= manager->config.children_max)
+                return 0;
+
         /* start new worker and pass initial device */
-        assert(hashmap_size(manager->workers) < manager->config.children_max);
         r = worker_spawn(manager, event);
         if (r < 0)
                 return r;
@@ -678,7 +683,7 @@ static void event_find_blocker(Event *event) {
                 log_device_debug(event->dev, "SEQNUM=%" PRIu64 " blocked by SEQNUM=%" PRIu64,
                                  event->seqnum, e->seqnum);
 
-                unref_and_replace_full(event->blocker, e, event_ref, event_unref);
+                unref_and_replace_new_ref(event->blocker, e, event_ref, event_unref);
                 return;
         }
 
@@ -1389,9 +1394,6 @@ static int manager_setup_event(Manager *manager) {
 
         assert(manager);
 
-        /* block SIGCHLD for listening child events. */
-        assert_se(sigprocmask_many(SIG_BLOCK, NULL, SIGCHLD) >= 0);
-
         r = sd_event_default(&e);
         if (r < 0)
                 return log_error_errno(r, "Failed to allocate event loop: %m");
@@ -1532,7 +1534,7 @@ int manager_main(Manager *manager) {
         /* We will start processing events in the loop below. Before starting processing, let's remove the
          * event serialization fd from the fdstore, to avoid retrieving the serialized events again in future
          * invocations. Otherwise, the serialized events may be processed multiple times. */
-        (void) notify_remove_fd("event-serialization");
+        (void) notify_remove_fd_warn("event-serialization");
 
         r = sd_event_loop(manager->event);
         if (r < 0)

@@ -13,7 +13,6 @@
 #include "recurse-dir.h"
 #include "stat-util.h"
 #include "string-util.h"
-#include "strv.h"
 #include "vpick.h"
 
 void pick_result_done(PickResult *p) {
@@ -86,8 +85,6 @@ static int format_fname(
 
         if (FLAGS_SET(flags, PICK_TRIES) || !filter->version) /* Underspecified? */
                 return -ENOEXEC;
-        if (strv_length(filter->suffix) > 1) /* suffix is not deterministic? */
-                return -ENOEXEC;
 
         /* The format for names we match goes like this:
          *
@@ -139,8 +136,8 @@ static int format_fname(
                         return -ENOMEM;
         }
 
-        if (!strv_isempty(filter->suffix))
-                if (!strextend(&fn, filter->suffix[0]))
+        if (!isempty(filter->suffix))
+                if (!strextend(&fn, filter->suffix))
                         return -ENOMEM;
 
         if (!filename_is_valid(fn))
@@ -193,15 +190,16 @@ static int pin_choice(
         _cleanup_free_ char *resolved_path = NULL;
         int r;
 
-        assert(toplevel_fd >= 0 || toplevel_fd == AT_FDCWD);
+        assert(wildcard_fd_is_valid(toplevel_fd));
         assert(inode_path);
         assert(filter);
         assert(ret);
 
         if (inode_fd < 0 || FLAGS_SET(flags, PICK_RESOLVE)) {
                 r = chaseat(toplevel_fd,
+                            toplevel_fd,
                             inode_path,
-                            CHASE_AT_RESOLVE_IN_ROOT,
+                            /* flags= */ 0,
                             FLAGS_SET(flags, PICK_RESOLVE) ? &resolved_path : NULL,
                             inode_fd < 0 ? &inode_fd : NULL);
                 if (r < 0)
@@ -324,13 +322,13 @@ static int make_choice(
         _cleanup_close_ int inode_fd = TAKE_FD(_inode_fd);
         int r;
 
-        assert(toplevel_fd >= 0 || toplevel_fd == AT_FDCWD);
+        assert(wildcard_fd_is_valid(toplevel_fd));
         assert(inode_path);
         assert(filter);
         assert(ret);
 
         if (inode_fd < 0) {
-                r = chaseat(toplevel_fd, inode_path, CHASE_AT_RESOLVE_IN_ROOT, NULL, &inode_fd);
+                r = chaseat(toplevel_fd, toplevel_fd, inode_path, /* flags= */ 0, NULL, &inode_fd);
                 if (r < 0)
                         return r;
         }
@@ -347,7 +345,7 @@ static int make_choice(
                         return log_oom_debug();
 
                 _cleanup_close_ int object_fd = -EBADF;
-                r = chaseat(toplevel_fd, p, CHASE_AT_RESOLVE_IN_ROOT, &object_path, &object_fd);
+                r = chaseat(toplevel_fd, toplevel_fd, p, /* flags= */ 0, &object_path, &object_fd);
                 if (r == -ENOENT) {
                         *ret = PICK_RESULT_NULL;
                         return 0;
@@ -407,8 +405,8 @@ static int make_choice(
                 } else
                         e = dname;
 
-                if (!strv_isempty(filter->suffix)) {
-                        char *sfx = endswith_strv(e, filter->suffix);
+                if (!isempty(filter->suffix)) {
+                        char *sfx = endswith(e, filter->suffix);
                         if (!sfx)
                                 continue;
 
@@ -511,12 +509,11 @@ static int path_pick_one(
                 PickResult *ret) {
 
         _cleanup_free_ char *filter_bname = NULL, *dir = NULL, *parent = NULL, *fname = NULL;
-        char * const *filter_suffix_strv = NULL;
         const char *filter_suffix = NULL, *enumeration_path;
         uint32_t filter_type_mask;
         int r;
 
-        assert(toplevel_fd >= 0 || toplevel_fd == AT_FDCWD);
+        assert(wildcard_fd_is_valid(toplevel_fd));
         assert(path);
         assert(filter);
         assert(ret);
@@ -569,11 +566,13 @@ static int path_pick_one(
                         return -ENOMEM;
 
                 /* Chop off suffix, if specified */
-                char *f = endswith_strv(filter_bname, filter->suffix);
-                if (f)
-                        *f = 0;
+                if (!isempty(filter->suffix)) {
+                        char *f = endswith(filter_bname, filter->suffix);
+                        if (f)
+                                *f = 0;
+                }
 
-                filter_suffix_strv = filter->suffix;
+                filter_suffix = filter->suffix;
                 filter_type_mask = filter->type_mask;
 
                 enumeration_path = path;
@@ -633,7 +632,7 @@ static int path_pick_one(
                                 .basename = filter_bname,
                                 .version = filter->version,
                                 .architecture = filter->architecture,
-                                .suffix = filter_suffix_strv ?: STRV_MAKE(filter_suffix),
+                                .suffix = filter_suffix,
                         },
                         flags,
                         ret);
@@ -663,7 +662,7 @@ int path_pick(const char *toplevel_path,
         _cleanup_(pick_result_done) PickResult best = PICK_RESULT_NULL;
         int r;
 
-        assert(toplevel_fd >= 0 || toplevel_fd == AT_FDCWD);
+        assert(wildcard_fd_is_valid(toplevel_fd));
         assert(path);
         assert(filters || n_filters == 0);
         assert(ret);
@@ -790,7 +789,7 @@ const PickFilter pick_filter_image_raw[1] = {
         {
                 .type_mask = (UINT32_C(1) << DT_REG) | (UINT32_C(1) << DT_BLK),
                 .architecture = _ARCHITECTURE_INVALID,
-                .suffix = STRV_MAKE(".raw"),
+                .suffix = ".raw",
         },
 };
 
@@ -798,5 +797,13 @@ const PickFilter pick_filter_image_dir[1] = {
         {
                 .type_mask = UINT32_C(1) << DT_DIR,
                 .architecture = _ARCHITECTURE_INVALID,
+        },
+};
+
+const PickFilter pick_filter_image_mstack[1] = {
+        {
+                .type_mask = UINT32_C(1) << DT_DIR,
+                .architecture = _ARCHITECTURE_INVALID,
+                .suffix = ".mstack",
         },
 };

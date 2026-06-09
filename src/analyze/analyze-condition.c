@@ -98,7 +98,7 @@ static int verify_conditions(char **lines, RuntimeScope scope, const char *unit,
                 return log_error_errno(r, "Failed to initialize manager: %m");
 
         log_debug("Starting manager...");
-        r = manager_startup(m, /* serialization= */ NULL, /* fds= */ NULL, root);
+        r = manager_startup(m, /* serialization= */ NULL, /* fds= */ NULL, /* named_listen_fds= */ NULL, root);
         if (r < 0)
                 return r;
 
@@ -136,7 +136,7 @@ static int verify_conditions(char **lines, RuntimeScope scope, const char *unit,
         return r > 0 && q > 0 ? 0 : -EIO;
 }
 
-int verb_condition(int argc, char *argv[], void *userdata) {
+int verb_condition(int argc, char *argv[], uintptr_t _data, void *userdata) {
         int r;
 
         r = verify_conditions(strv_skip(argv, 1), arg_runtime_scope, arg_unit, arg_root);

@@ -57,6 +57,7 @@ endif
 export DEB_BUILD_MAINT_OPTIONS = optimize=+lto hardening=+pie $(DEB_BUILD_OPTIONS)
 
 CONFFLAGS = \
+	-Dc_link_args=-Wl,--push-state,--no-as-needed,-lm,--pop-state \
 	-Dstatic-libsystemd=true \
 	-Dversion-tag="$(VERSION_TAG)" \
 	-Dquotaon-path=/usr/sbin/quotaon \
@@ -114,6 +115,7 @@ CONFFLAGS = \
 	-Dtty-mode=0600 \
 	-Dvmspawn=enabled \
 	-Defi-stub-extra-sections=500 \
+	-Dcompat-sysv-interfaces=false \
 	-Dmode=$(if $(filter pkg.systemd.upstream,$(DEB_BUILD_PROFILES)),developer,release)
 
 ifeq ($(filter nocheck,$(DEB_BUILD_PROFILES))$(filter noinsttest,$(DEB_BUILD_PROFILES)),nochecknoinsttest)
@@ -214,8 +216,6 @@ endif
 ifeq (, $(filter pkg.systemd.upstream, $(DEB_BUILD_PROFILES)))
 CONFFLAGS += -Ddns-servers=''
 CONFFLAGS += -Dsbat-distro-url=https://tracker.debian.org/pkg/systemd
-CONFFLAGS += -Dsysvinit-path=/etc/init.d
-CONFFLAGS += -Dsysvrcnd-path=/etc
 else
 CONFFLAGS += --buildtype=debugoptimized
 CONFFLAGS += -Dsbat-distro-url=https://github.com/systemd/systemd

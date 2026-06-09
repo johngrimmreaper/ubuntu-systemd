@@ -4,12 +4,14 @@
 
 #include "alloc-util.h"
 #include "daemon-util.h"
+#include "errno-util.h"
 #include "fd-util.h"
 #include "log.h"
+#include "parse-util.h"
 #include "string-util.h"
 #include "time-util.h"
 
-static int notify_remove_fd_full(int log_level, const char *name) {
+int notify_remove_fd_warn(const char *name) {
         int r;
 
         assert(name);
@@ -19,19 +21,11 @@ static int notify_remove_fd_full(int log_level, const char *name) {
                        "FDNAME=%s", name);
         if (r < 0)
                 return log_full_errno(
-                                log_level, r,
+                                ERRNO_IS_NEG_DISCONNECT(r) ? LOG_DEBUG : LOG_WARNING, r,
                                 "Failed to remove file descriptor \"%s\" from the store, ignoring: %m",
                                 name);
 
         return 0;
-}
-
-int notify_remove_fd(const char *name) {
-        return notify_remove_fd_full(LOG_DEBUG, name);
-}
-
-int notify_remove_fd_warn(const char *name) {
-        return notify_remove_fd_full(LOG_WARNING, name);
 }
 
 int notify_remove_fd_warnf(const char *format, ...) {
@@ -89,6 +83,27 @@ int notify_push_fdf(int fd, const char *format, ...) {
                 return -ENOMEM;
 
         return notify_push_fd(fd, name);
+}
+
+bool fdstore_detected(void) {
+        static int cached = -1;
+        int r;
+
+        if (cached >= 0)
+                return cached;
+
+        const char *e = getenv("FDSTORE");
+        if (isempty(e))
+                return (cached = 0);
+
+        unsigned u;
+        r = safe_atou(e, &u);
+        if (r < 0) {
+                log_debug_errno(r, "Failed to parse 'FDSTORE=%s', ignoring: %m", e);
+                return (cached = 0);
+        }
+
+        return (cached = u > 0);
 }
 
 int notify_reloading_full(const char *status) {

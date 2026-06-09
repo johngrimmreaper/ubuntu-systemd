@@ -25,9 +25,9 @@ systemd-dissect "$MINIMAL_IMAGE.raw" | grep -F -f <(sed 's/"//g' "$OS_RELEASE") 
 
 systemd-dissect --list "$MINIMAL_IMAGE.raw" | grep '^etc/os-release$' >/dev/null
 systemd-dissect --mtree "$MINIMAL_IMAGE.raw" --mtree-hash yes | \
-    grep -E "^.(/usr|)/bin/cat type=file mode=0755 uid=0 gid=0 size=[0-9]* sha256sum=[a-z0-9]*$" >/dev/null
+    grep -E "^.(/usr|)/bin/bash type=file mode=0755 uid=0 gid=0 size=[0-9]* sha256sum=[a-z0-9]*$" >/dev/null
 systemd-dissect --mtree "$MINIMAL_IMAGE.raw" --mtree-hash no  | \
-    grep -E "^.(/usr|)/bin/cat type=file mode=0755 uid=0 gid=0 size=[0-9]*$" >/dev/null
+    grep -E "^.(/usr|)/bin/bash type=file mode=0755 uid=0 gid=0 size=[0-9]*$" >/dev/null
 
 read -r SHA256SUM1 _ < <(systemd-dissect --copy-from "$MINIMAL_IMAGE.raw" etc/os-release | sha256sum)
 test "$SHA256SUM1" != ""
@@ -160,6 +160,8 @@ mv "$MINIMAL_IMAGE.foohash" "$MINIMAL_IMAGE.roothash"
 # Derive partition UUIDs from root hash, in UUID syntax
 ROOT_UUID="$(systemd-id128 -u show "$(head -c 32 "$MINIMAL_IMAGE.roothash")" -u | tail -n 1 | cut -b 6-)"
 VERITY_UUID="$(systemd-id128 -u show "$(tail -c 32 "$MINIMAL_IMAGE.roothash")" -u | tail -n 1 | cut -b 6-)"
+USR_UUID="$ROOT_UUID"
+USR_VERITY_UUID="$VERITY_UUID"
 
 systemd-dissect --json=short \
                 --root-hash "$MINIMAL_IMAGE_ROOTHASH" \
@@ -177,6 +179,20 @@ if [[ -n "${OPENSSL_CONFIG:-}" ]]; then
 fi
 systemd-dissect --root-hash "$MINIMAL_IMAGE_ROOTHASH" "$MINIMAL_IMAGE.gpt" | grep -F "MARKER=1" >/dev/null
 systemd-dissect --root-hash "$MINIMAL_IMAGE_ROOTHASH" "$MINIMAL_IMAGE.gpt" | grep -F -f <(sed 's/"//g' "$OS_RELEASE") >/dev/null
+systemd-dissect --json=short \
+                --usr-hash "$MINIMAL_IMAGE_ROOTHASH" \
+                "$MINIMAL_IMAGE.usr.gpt" | \
+                grep '{"rw":"ro","designator":"usr","partition_uuid":"'"$USR_UUID"'","partition_label":"Usr Partition","fstype":"squashfs","architecture":"'"$ARCHITECTURE"'","verity":"signed",' >/dev/null
+systemd-dissect --json=short \
+                --usr-hash "$MINIMAL_IMAGE_ROOTHASH" \
+                "$MINIMAL_IMAGE.usr.gpt" | \
+                grep '{"rw":"ro","designator":"usr-verity","partition_uuid":"'"$USR_VERITY_UUID"'","partition_label":"Usr Verity Partition","fstype":"DM_verity_hash","architecture":"'"$ARCHITECTURE"'","verity":null,' >/dev/null
+if [[ -n "${OPENSSL_CONFIG:-}" ]]; then
+    systemd-dissect --json=short \
+                    --usr-hash "$MINIMAL_IMAGE_ROOTHASH" \
+                    "$MINIMAL_IMAGE.usr.gpt" | \
+                    grep -E '{"rw":"ro","designator":"usr-verity-sig","partition_uuid":"'".*"'","partition_label":"Usr Signature Partition","fstype":"verity_hash_signature","architecture":"'"$ARCHITECTURE"'","verity":null,' >/dev/null
+fi
 
 # Test image policies
 systemd-dissect --validate "$MINIMAL_IMAGE.gpt"
@@ -194,6 +210,12 @@ systemd-dissect --validate "$MINIMAL_IMAGE.gpt" --image-policy=root=verity:swap=
 systemd-dissect --validate "$MINIMAL_IMAGE.gpt" --image-policy=root=signed
 (! systemd-dissect --validate "$MINIMAL_IMAGE.gpt" --image-policy=root=signed:root-verity-sig=unused+absent)
 (! systemd-dissect --validate "$MINIMAL_IMAGE.gpt" --image-policy=root=signed:root-verity=unused+absent)
+systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=verity
+systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=verity:usr-verity-sig=unused+absent
+(! systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=verity:usr-verity=unused+absent)
+systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=signed
+(! systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=signed:usr-verity-sig=unused+absent)
+(! systemd-dissect --validate "$MINIMAL_IMAGE.usr.gpt" --image-policy=usr=signed:usr-verity=unused+absent)
 
 # Test RootImagePolicy= unit file setting
 systemd-run --wait -P \
@@ -243,6 +265,12 @@ systemd-run --wait -P \
             -p RootImagePolicy='root=signed+lol:wut=wat+signed' \
             -p MountAPIVFS=yes \
             cat /usr/lib/os-release | grep -F "MARKER=1" >/dev/null
+# A policy pinning a single fstype on a GPT image should still use verity.
+systemd-run --wait -P \
+            -p RootImage="$MINIMAL_IMAGE.gpt" \
+            -p RootImagePolicy='root=verity+squashfs' \
+            -p MountAPIVFS=yes \
+            cat /usr/lib/os-release | grep -F "MARKER=1" >/dev/null
 (! systemd-run --wait -P \
                -p RootImage="$MINIMAL_IMAGE.gpt" \
                -p RootHash="$MINIMAL_IMAGE_ROOTHASH" \
@@ -270,11 +298,11 @@ systemd-run -P \
             cat /usr/lib/os-release | grep -F "MARKER=1" >/dev/null
 systemd-run -P \
             -p RootImage="$MINIMAL_IMAGE.raw" \
-            -p RootImageOptions="root:nosuid,dev home:ro,dev ro,noatime" \
+            -p RootImageOptions="root:noatime,dev home:ro,dev ro,nosuid" \
             mount | grep -F "squashfs" | grep -F "nosuid" >/dev/null
 systemd-run -P \
             -p RootImage="$MINIMAL_IMAGE.gpt" \
-            -p RootImageOptions="root:ro,noatime root:ro,dev" \
+            -p RootImageOptions="root:ro,dev root:ro,noatime" \
             mount | grep -F "squashfs" | grep -F "noatime" >/dev/null
 
 mkdir -p "$IMAGE_DIR/result"
@@ -285,8 +313,8 @@ ExecStart=bash -c "mount >/run/result/a"
 BindPaths=$IMAGE_DIR/result:/run/result
 TemporaryFileSystem=/run
 RootImage=$MINIMAL_IMAGE.raw
-RootImageOptions=root:ro,noatime home:ro,dev relatime,dev
-RootImageOptions=nosuid,dev
+RootImageOptions=root:relatime,dev home:ro,dev nosuid,dev
+RootImageOptions=ro,noatime
 EOF
 systemctl start testservice-50a.service
 grep -F "squashfs" "$IMAGE_DIR/result/a" | grep -F "noatime" >/dev/null
@@ -299,8 +327,8 @@ ExecStart=bash -c "mount >/run/result/b"
 BindPaths=$IMAGE_DIR/result:/run/result
 TemporaryFileSystem=/run
 RootImage=$MINIMAL_IMAGE.gpt
-RootImageOptions=root:ro,noatime,nosuid home:ro,dev nosuid,dev
-RootImageOptions=home:ro,dev nosuid,dev,%%foo
+RootImageOptions=nosuid,dev home:ro,dev nosuid,dev
+RootImageOptions=home:ro,dev,%%foo root:ro,noatime,nosuid
 # this is the default, but let's specify once to test the parser
 MountAPIVFS=yes
 EOF
@@ -310,7 +338,7 @@ grep -F "squashfs" "$IMAGE_DIR/result/b" | grep -F "noatime" >/dev/null
 # Check that specifier escape is applied %%foo → %foo
 busctl get-property org.freedesktop.systemd1 \
                     /org/freedesktop/systemd1/unit/testservice_2d50b_2eservice \
-                    org.freedesktop.systemd1.Service RootImageOptions | grep -F "nosuid,dev,%foo"
+                    org.freedesktop.systemd1.Service RootImageOptions | grep -F "ro,dev,%foo"
 
 # Now do some checks with MountImages, both by itself, with options and in combination with RootImage, and as single FS or GPT image
 systemd-run -P \
@@ -507,9 +535,53 @@ NONEXISTENT_VDIR="/tmp/$VBASE-nonexistent.v"
 mkdir "$VDIR" "$EMPTY_VDIR"
 
 ln -s /tmp/app0.raw "$VDIR/${VBASE}_0.raw"
+ln -s /tmp/app0.verity "$VDIR/${VBASE}_0.verity"
+ln -s /tmp/app0.roothash "$VDIR/${VBASE}_0.roothash"
 ln -s /tmp/app1.raw "$VDIR/${VBASE}_1.raw"
 
 systemd-run -P -p ExtensionImages="$VDIR -$EMPTY_VDIR -$NONEXISTENT_VDIR" bash -o pipefail -c '/opt/script1.sh | grep ID'
+
+# Check dissect shortcut for verity images
+# No verity for the second img (previous test benefits from variations), remove it for the next one
+rm -f "$VDIR/${VBASE}_1.raw"
+cat >/run/systemd/system/testservice-50e-vpick.service <<EOF
+[Service]
+Type=notify
+NotifyAccess=all
+MountAPIVFS=yes
+TemporaryFileSystem=/run /var/lib
+StateDirectory=app-vpick
+RootImage=$MINIMAL_IMAGE.raw
+RootImagePolicy=root=squashfs
+ExtensionImages=$VDIR:x-systemd.relax-extension-release-check -$EMPTY_VDIR -$NONEXISTENT_VDIR
+ExtensionImagePolicy=root=squashfs
+# Relevant only for sanitizer runs
+UnsetEnvironment=LD_PRELOAD
+ExecStartPre=bash -c '/opt/script0.sh | grep ID'
+ExecStart=sh -c 'echo "READY=1" | socat -t 5 - UNIX-SENDTO:\$\$NOTIFY_SOCKET; sleep infinity'
+EOF
+systemctl start testservice-50e-vpick.service
+systemctl is-active testservice-50e-vpick.service
+# Ensure the device is preopened for reuse. Note that sd-dissect -M does not work on older
+# kernels, <something> makes the devices disappear on Ubuntu 24.04/C9S, so set them
+# up by hand. Don't fail if it's already set up.
+veritysetup open "$MINIMAL_IMAGE.raw" "$(cat "$MINIMAL_IMAGE.roothash")-verity" "$MINIMAL_IMAGE.verity" --root-hash-file "$MINIMAL_IMAGE.roothash" ||:
+veritysetup open "$VDIR/${VBASE}_0.raw" "$(cat "$VDIR/${VBASE}_0.roothash")-verity" "$VDIR/${VBASE}_0.verity" --root-hash-file "$VDIR/${VBASE}_0.roothash" ||:
+mkdir -p /tmp/img /tmp/ext
+mount -o ro "/dev/mapper/$(cat "$MINIMAL_IMAGE.roothash")-verity" /tmp/img
+mount -o ro "/dev/mapper/$(cat "$VDIR/${VBASE}_0.roothash")-verity" /tmp/ext
+journalctl --sync
+since="$(date '+%H:%M:%S')"
+systemctl restart testservice-50e-vpick.service
+systemctl is-active testservice-50e-vpick.service
+journalctl --sync
+timeout -v 30 journalctl --since "$since" -n all --follow | grep -m 2 -F 'Reusing pre-existing verity-protected root image'
+timeout -v 30 journalctl --since "$since" -n all --follow | grep -m 2 -F 'Reusing pre-existing verity-protected image'
+systemctl stop testservice-50e-vpick.service
+umount -R /tmp/img
+umount -R /tmp/ext
+veritysetup close "$(cat "$MINIMAL_IMAGE.roothash")-verity" ||:
+veritysetup close "$(cat "$VDIR/${VBASE}_0.roothash")-verity" ||:
 
 rm -rf "$VDIR" "$EMPTY_VDIR"
 
@@ -818,6 +890,49 @@ rm -f /run/systemd/system/testservice-50k.service
 systemctl daemon-reload
 rm -rf "$VDIR" "$VDIR2" "$CDIR1" "$CDIR2" "$CIMG1" "$CIMG2" /tmp/vpickminimg /tmp/markers/
 
+# Check dissect shortcut for verity images
+cat >/run/systemd/system/testservice-50m.service <<EOF
+[Service]
+Type=notify
+NotifyAccess=all
+TemporaryFileSystem=/run /var/lib
+StateDirectory=app0
+RootImage=$MINIMAL_IMAGE.raw
+RootImagePolicy=root=squashfs
+ExtensionImages=/tmp/app0.raw /tmp/app1.raw
+ExtensionImagePolicy=root=squashfs
+MountImages=/tmp/app0.raw:/var/lib/app
+MountImagePolicy=root=squashfs
+# Relevant only for sanitizer runs
+UnsetEnvironment=LD_PRELOAD
+ExecStartPre=bash -o pipefail -c '/opt/script0.sh | grep ID'
+ExecStartPre=bash -o pipefail -c '/opt/script1.sh | grep ID'
+ExecStartPre=test -e "/dev/mapper/$(</tmp/app0.roothash)-verity"
+ExecStart=sh -c 'echo "READY=1" | socat -t 5 - UNIX-SENDTO:\$\$NOTIFY_SOCKET; sleep infinity'
+EOF
+systemctl start testservice-50m.service
+systemctl is-active testservice-50m.service
+# Ensure the device is preopened for reuse. Note that sd-dissect -M does not work on older
+# kernels, <something> makes the devices disappear on Ubuntu 24.04/C9S, so set them
+# up by hand. Don't fail if it's already set up.
+veritysetup open "$MINIMAL_IMAGE.raw" "$(cat "$MINIMAL_IMAGE.roothash")-verity" "$MINIMAL_IMAGE.verity" --root-hash-file "$MINIMAL_IMAGE.roothash" ||:
+veritysetup open /tmp/app0.raw "$(cat /tmp/app0.roothash)-verity" /tmp/app0.verity --root-hash-file /tmp/app0.roothash ||:
+mkdir -p /tmp/img /tmp/ext
+mount -o ro "/dev/mapper/$(cat "$MINIMAL_IMAGE.roothash")-verity" /tmp/img
+mount -o ro "/dev/mapper/$(cat /tmp/app0.roothash)-verity" /tmp/ext
+journalctl --sync
+since="$(date '+%H:%M:%S')"
+systemctl restart testservice-50m.service
+systemctl is-active testservice-50m.service
+journalctl --sync
+timeout -v 30 journalctl --since "$since" -n all --follow | grep -m 4 -F 'Reusing pre-existing verity-protected root image'
+timeout -v 30 journalctl --since "$since" -n all --follow | grep -m 8 -F 'Reusing pre-existing verity-protected image'
+systemctl stop testservice-50m.service
+umount /tmp/img
+umount /tmp/ext
+veritysetup close "$(cat "$MINIMAL_IMAGE.roothash")-verity" ||:
+veritysetup close "$(cat /tmp/app0.roothash)-verity" ||:
+
 # Test that an extension consisting of an empty directory under /etc/extensions/ takes precedence
 mkdir -p /var/lib/extensions/
 ln -s /tmp/app-nodistro.raw /var/lib/extensions/app-nodistro.raw
@@ -841,6 +956,33 @@ varlinkctl call /run/systemd/io.systemd.sysext io.systemd.sysext.Refresh '{}'
 grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file
 varlinkctl call /run/systemd/io.systemd.sysext io.systemd.sysext.Unmerge '{}'
 (! grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file )
+
+# And again, but unprivileged, if we have pidfds and polkit support
+# Also check that the required policy is installed, as packages might be out of date with the test
+if systemd-analyze compare-versions "$(uname -r)" ge 6.5 && \
+        systemd-analyze compare-versions "$(pkcheck --version | awk '{print $3}')" ge 124 && \
+        test -f /usr/share/polkit-1/actions/io.systemd.sysext.policy; then
+    mkdir -p /etc/polkit-1/rules.d
+    cat >/etc/polkit-1/rules.d/sysext-unpriv.rules <<'EOF'
+polkit.addRule(function(action, subject) {
+    if (action.id == "io.systemd.sysext.manage" &&
+        subject.user == "testuser") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+    systemctl try-reload-or-restart polkit.service
+    run0 -u testuser varlinkctl call --more /run/systemd/io.systemd.sysext io.systemd.sysext.List '{}'
+    (! grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file )
+    run0 -u testuser varlinkctl call /run/systemd/io.systemd.sysext io.systemd.sysext.Merge '{"allowInteractiveAuthentication": true}'
+    grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file
+    run0 -u testuser varlinkctl call /run/systemd/io.systemd.sysext io.systemd.sysext.Refresh '{"allowInteractiveAuthentication": true}'
+    grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file
+    run0 -u testuser varlinkctl call /run/systemd/io.systemd.sysext io.systemd.sysext.Unmerge '{"allowInteractiveAuthentication": true}'
+    (! grep -q -F "MARKER=1" /usr/lib/systemd/system/some_file )
+    rm -f /etc/polkit-1/rules.d/sysext-unpriv.rules
+    systemctl try-reload-or-restart polkit.service
+fi
 
 # Check that extensions cannot contain os-release
 mkdir -p /run/extensions/app-reject/usr/lib/{extension-release.d/,systemd/system}
@@ -967,6 +1109,45 @@ echo abc >abc
 systemd-dissect --copy-to /tmp/img abc /abc
 test -f /tmp/img/abc
 
+# Test --copy-ownership= option
+rm -rf /tmp/copychown-test
+mkdir -p /tmp/copychown-test/srcdir
+echo "test file" >/tmp/copychown-test/srcdir/testfile
+chown 1234:5678 /tmp/copychown-test/srcdir/testfile
+chown 1234:5678 /tmp/copychown-test/srcdir
+
+# Test --copy-ownership=yes preserves ownership for regular files
+systemd-dissect --copy-from /tmp/img etc/os-release /tmp/copychown-test/os-release-chown-yes --copy-ownership=yes
+test "$(stat -c %u:%g /tmp/copychown-test/os-release-chown-yes)" = "0:0"
+
+# Test --copy-ownership=no uses current user for regular files
+systemd-dissect --copy-from /tmp/img etc/os-release /tmp/copychown-test/os-release-chown-no --copy-ownership=no
+test "$(stat -c %u:%g /tmp/copychown-test/os-release-chown-no)" = "0:0"
+
+# Test --copy-ownership=auto (default) does not preserve ownership for regular files
+systemd-dissect --copy-from /tmp/img etc/os-release /tmp/copychown-test/os-release-chown-auto
+test "$(stat -c %u:%g /tmp/copychown-test/os-release-chown-auto)" = "0:0"
+
+# Test --copy-ownership=yes preserves ownership for directories
+systemd-dissect --copy-to /tmp/img /tmp/copychown-test/srcdir /copychown-dir-yes --copy-ownership=yes
+test "$(stat -c %u:%g /tmp/img/copychown-dir-yes)" = "1234:5678"
+test "$(stat -c %u:%g /tmp/img/copychown-dir-yes/testfile)" = "1234:5678"
+rm -rf /tmp/img/copychown-dir-yes
+
+# Test --copy-ownership=no overrides ownership for directories
+systemd-dissect --copy-to /tmp/img /tmp/copychown-test/srcdir /copychown-dir-no --copy-ownership=no
+test "$(stat -c %u:%g /tmp/img/copychown-dir-no)" = "0:0"
+test "$(stat -c %u:%g /tmp/img/copychown-dir-no/testfile)" = "0:0"
+rm -rf /tmp/img/copychown-dir-no
+
+# Test --copy-ownership=auto (default) preserves ownership for directories
+systemd-dissect --copy-to /tmp/img /tmp/copychown-test/srcdir /copychown-dir-auto
+test "$(stat -c %u:%g /tmp/img/copychown-dir-auto)" = "1234:5678"
+test "$(stat -c %u:%g /tmp/img/copychown-dir-auto/testfile)" = "1234:5678"
+rm -rf /tmp/img/copychown-dir-auto
+
+rm -rf /tmp/copychown-test
+
 # Test for dissect tool support with systemd-sysext
 mkdir -p /run/extensions/ testkit/usr/lib/extension-release.d/
 echo "ID=_any" >testkit/usr/lib/extension-release.d/extension-release.testkit
@@ -1021,6 +1202,47 @@ systemd-sysext merge
 systemd-sysext unmerge
 systemctl status foo.service 2>&1 | grep -v -F "Warning" >/dev/null
 rm /var/lib/extensions/app-reload.raw
+
+# Test that GPT images with an ISO9660 El Torito boot catalog are dissected correctly. The blkid
+# superblock filter must prevent the iso9660 superblock from being detected, so dissection proceeds via
+# the GPT partition table rather than treating the whole image as a single iso9660 filesystem.
+defs="$(mktemp --directory "$IMAGE_DIR/test-50-dissect-eltorito.defs.XXXXXXXXXX")"
+imgs="$(mktemp --directory "$IMAGE_DIR/test-50-dissect-eltorito.imgs.XXXXXXXXXX")"
+
+tee "$defs/00-esp.conf" <<EOF
+[Partition]
+Type=esp
+Format=vfat
+SizeMinBytes=100M
+SizeMaxBytes=100M
+EOF
+
+tee "$defs/10-root.conf" <<EOF
+[Partition]
+Type=root
+Format=ext4
+SizeMinBytes=100M
+SizeMaxBytes=100M
+EOF
+
+systemd-repart --pretty=yes \
+               --definitions="$defs" \
+               --empty=create \
+               --size=auto \
+               --dry-run=no \
+               --offline=yes \
+               --el-torito=yes \
+               "$imgs/eltorito.img"
+
+# Verify the image has both iso9660 superblock and GPT partition table
+blkid -o value -s PTTYPE "$imgs/eltorito.img" | grep -x gpt
+blkid -o value -s TYPE "$imgs/eltorito.img" | grep -x iso9660
+
+# systemd-dissect must process the GPT partitions, not the whole-device iso9660 superblock
+systemd-dissect --json=short "$imgs/eltorito.img" | grep -F '"designator":"root"' | grep -F '"fstype":"ext4"'
+systemd-dissect --json=short "$imgs/eltorito.img" | grep -F '"designator":"esp"' | grep -F '"fstype":"vfat"'
+
+rm -rf "$defs" "$imgs"
 
 # Sneak in a couple of expected-to-fail invocations to cover
 # https://github.com/systemd/systemd/issues/29610

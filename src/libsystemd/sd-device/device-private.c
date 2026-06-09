@@ -732,8 +732,7 @@ int device_cleanup_tags(sd_device *device, sd_device *original) {
 void device_cleanup_devlinks(sd_device *device) {
         assert(device);
 
-        set_free(device->devlinks);
-        device->devlinks = NULL;
+        device->devlinks = set_free(device->devlinks);
         device->property_devlinks_outdated = true;
         device->devlinks_generation++;
 }
@@ -913,7 +912,7 @@ int device_update_db(sd_device *device) {
                         fprintf(f, "Q:%s\n", ct); /* Current tag */
 
                 /* Always write the latest database version here, instead of the value stored in
-                 * device->database_version, as which may be 0. */
+                 * device->database_version. */
                 fputs("V:" STRINGIFY(LATEST_UDEV_DATABASE_VERSION) "\n", f);
         }
 

@@ -17,6 +17,7 @@
 #include "cpu-set-util.h"
 #include "dropin.h"
 #include "errno-list.h"
+#include "event-util.h"
 #include "extract-word.h"
 #include "fd-util.h"
 #include "fileio.h"
@@ -246,18 +247,17 @@ static bool apparmor_restrict_unprivileged_userns(void) {
 }
 
 static bool have_userns_privileges(void) {
-        pid_t pid;
+        _cleanup_(pidref_done) PidRef pidref = PIDREF_NULL;
         int r;
 
         if (apparmor_restrict_unprivileged_userns())
                 return false;
 
-        r = safe_fork("(sd-test-check-userns)",
-                      FORK_RESET_SIGNALS |
-                      FORK_CLOSE_ALL_FDS |
-                      FORK_DEATHSIG_SIGKILL,
-                      &pid);
-        ASSERT_OK(r);
+        r = ASSERT_OK(pidref_safe_fork(
+                        "(sd-test-check-userns)",
+                        FORK_RESET_SIGNALS|FORK_CLOSE_ALL_FDS|FORK_DEATHSIG_SIGKILL,
+                        &pidref));
+
         if (r == 0) {
                 /* Keep CAP_SYS_ADMIN if we have it to ensure we give an
                  * accurate result to the caller. Some kernels have a
@@ -282,7 +282,7 @@ static bool have_userns_privileges(void) {
          *  EXIT_SUCCESS => we can use user namespaces
          *  EXIT_FAILURE => we can NOT use user namespaces
          *  2            => some other error occurred */
-        r = wait_for_terminate_and_check("(sd-test-check-userns)", pid, 0);
+        r = pidref_wait_for_terminate_and_check("(sd-test-check-userns)", &pidref, 0);
         if (!IN_SET(r, EXIT_SUCCESS, EXIT_FAILURE))
                 log_debug("Failed to check if user namespaces can be used, assuming not.");
 
@@ -672,16 +672,14 @@ reenable:
 }
 
 static int on_spawn_timeout(sd_event_source *s, uint64_t usec, void *userdata) {
-        pid_t *pid = userdata;
+        PidRef *pidref = ASSERT_PTR(userdata);
 
-        ASSERT_NOT_NULL(pid);
-
-        (void) kill(*pid, SIGKILL);
+        (void) pidref_kill(pidref, SIGKILL);
 
         return 1;
 }
 
-static int on_spawn_sigchld(sd_event_source *s, const siginfo_t *si, void *userdata) {
+static int on_spawn_exit(sd_event_source *s, const siginfo_t *si, void *userdata) {
         int ret = -EIO;
 
         ASSERT_NOT_NULL(si);
@@ -701,21 +699,21 @@ static int find_libraries(const char *exec, char ***ret) {
         _cleanup_close_pair_ int outpipe[2] = EBADF_PAIR, errpipe[2] = EBADF_PAIR;
         _cleanup_strv_free_ char **libraries = NULL;
         _cleanup_free_ char *result = NULL;
-        pid_t pid;
         int r;
 
         ASSERT_NOT_NULL(exec);
         ASSERT_NOT_NULL(ret);
 
-        ASSERT_OK(sigprocmask_many(SIG_BLOCK, NULL, SIGCHLD));
-
         ASSERT_OK_ERRNO(pipe2(outpipe, O_NONBLOCK|O_CLOEXEC));
         ASSERT_OK_ERRNO(pipe2(errpipe, O_NONBLOCK|O_CLOEXEC));
 
-        r = safe_fork_full("(spawn-ldd)",
-                           (int[]) { -EBADF, outpipe[1], errpipe[1] },
-                           NULL, 0,
-                           FORK_RESET_SIGNALS|FORK_CLOSE_ALL_FDS|FORK_DEATHSIG_SIGTERM|FORK_REARRANGE_STDIO|FORK_LOG, &pid);
+        _cleanup_(pidref_done) PidRef pidref = PIDREF_NULL;
+        r = pidref_safe_fork_full(
+                        "(spawn-ldd)",
+                        (int[]) { -EBADF, outpipe[1], errpipe[1] },
+                        NULL, 0,
+                        FORK_RESET_SIGNALS|FORK_CLOSE_ALL_FDS|FORK_DEATHSIG_SIGTERM|FORK_REARRANGE_STDIO|FORK_LOG,
+                        &pidref);
         ASSERT_OK(r);
         if (r == 0) {
                 execlp("ldd", "ldd", exec, NULL);
@@ -728,13 +726,13 @@ static int find_libraries(const char *exec, char ***ret) {
         ASSERT_OK(sd_event_new(&e));
 
         ASSERT_OK(sd_event_add_time_relative(e, NULL, CLOCK_MONOTONIC,
-                                             10 * USEC_PER_SEC, USEC_PER_SEC, on_spawn_timeout, &pid));
+                                             10 * USEC_PER_SEC, USEC_PER_SEC, on_spawn_timeout, &pidref));
         ASSERT_OK(sd_event_add_io(e, &stdout_source, outpipe[0], EPOLLIN, on_spawn_io, &result));
         ASSERT_OK(sd_event_source_set_enabled(stdout_source, SD_EVENT_ONESHOT));
         ASSERT_OK(sd_event_add_io(e, &stderr_source, errpipe[0], EPOLLIN, on_spawn_io, NULL));
         ASSERT_OK(sd_event_source_set_enabled(stderr_source, SD_EVENT_ONESHOT));
-        ASSERT_OK(sd_event_add_child(e, &sigchld_source, pid, WEXITED, on_spawn_sigchld, NULL));
-        /* SIGCHLD should be processed after IO is complete */
+        ASSERT_OK(event_add_child_pidref(e, &sigchld_source, &pidref, WEXITED, on_spawn_exit, NULL));
+        /* Child exit should be processed after IO is complete */
         ASSERT_OK(sd_event_source_set_priority(sigchld_source, SD_EVENT_PRIORITY_NORMAL + 1));
 
         ASSERT_OK(sd_event_loop(e));
@@ -1026,11 +1024,6 @@ static void test_exec_dynamicuser(Manager *m) {
         _cleanup_free_ char *bad = private_directory_bad(m);
         if (bad) {
                 log_warning("%s: %s has bad permissions, skipping test.", __func__, bad);
-                return;
-        }
-
-        if (strstr_ptr(ci_environment(), "github-actions")) {
-                log_notice("%s: skipping test on GH Actions because of systemd/systemd#10337", __func__);
                 return;
         }
 
@@ -1437,7 +1430,7 @@ static void run_tests(RuntimeScope scope, char **patterns) {
         ASSERT_OK(r);
 
         m->defaults.std_output = EXEC_OUTPUT_INHERIT; /* don't rely on host journald */
-        ASSERT_OK(manager_startup(m, NULL, NULL, NULL));
+        ASSERT_OK(manager_startup(m, NULL, NULL, NULL, NULL));
 
         /* Uncomment below if you want to make debugging logs stored to journal. */
         //manager_override_log_target(m, LOG_TARGET_AUTO);
@@ -1467,16 +1460,17 @@ static void run_tests(RuntimeScope scope, char **patterns) {
 static int prepare_ns(const char *process_name) {
         int r;
 
-        r = safe_fork(process_name,
-                      FORK_RESET_SIGNALS |
-                      FORK_CLOSE_ALL_FDS |
-                      FORK_DEATHSIG_SIGTERM |
-                      FORK_WAIT |
-                      FORK_REOPEN_LOG |
-                      FORK_LOG |
-                      FORK_NEW_MOUNTNS |
-                      FORK_MOUNTNS_SLAVE,
-                      NULL);
+        r = pidref_safe_fork(
+                        process_name,
+                        FORK_RESET_SIGNALS|
+                        FORK_CLOSE_ALL_FDS|
+                        FORK_DEATHSIG_SIGTERM|
+                        FORK_WAIT|
+                        FORK_REOPEN_LOG|
+                        FORK_LOG|
+                        FORK_NEW_MOUNTNS|
+                        FORK_MOUNTNS_SLAVE,
+                        NULL);
         ASSERT_OK(r);
         if (r == 0) {
                 _cleanup_free_ char *unit_dir = NULL, *build_dir = NULL, *build_dir_mount = NULL;
@@ -1498,7 +1492,7 @@ static int prepare_ns(const char *process_name) {
 
                 /* Copy unit files to make them accessible even when unprivileged. */
                 ASSERT_OK(get_testdata_dir("test-execute/", &unit_dir));
-                ASSERT_OK(copy_directory_at(AT_FDCWD, unit_dir, AT_FDCWD, PRIVATE_UNIT_DIR, COPY_MERGE_EMPTY));
+                ASSERT_OK(copy_directory_at(AT_FDCWD, unit_dir, AT_FDCWD, PRIVATE_UNIT_DIR, UID_INVALID, GID_INVALID, COPY_MERGE_EMPTY));
 
                 /* Mount tmpfs on the following directories to make not StateDirectory= or friends disturb the host. */
                 ASSERT_OK_OR(get_build_exec_dir(&build_dir), -ENOEXEC);
@@ -1617,10 +1611,6 @@ TEST(run_tests_unprivileged) {
 static int intro(void) {
         int r;
 
-#if HAS_FEATURE_ADDRESS_SANITIZER
-        if (strstr_ptr(ci_environment(), "travis") || strstr_ptr(ci_environment(), "github-actions"))
-                return log_tests_skipped("Running on Travis CI/GH Actions under ASan, see https://github.com/systemd/systemd/issues/10696");
-#endif
         /* It is needed otherwise cgroup creation fails */
         if (geteuid() != 0 || have_effective_cap(CAP_SYS_ADMIN) <= 0)
                 return log_tests_skipped("not privileged");
@@ -1634,7 +1624,7 @@ static int intro(void) {
         if (path_is_read_only_fs("/sys") > 0)
                 return log_tests_skipped("/sys is mounted read-only");
 
-        r = dlopen_libmount();
+        r = dlopen_libmount(LOG_DEBUG);
         if (r < 0)
                 return log_tests_skipped("libmount not available.");
 

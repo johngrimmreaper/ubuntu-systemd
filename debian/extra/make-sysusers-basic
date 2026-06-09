@@ -12,6 +12,9 @@ while read name _ id _; do
     fi
 done < /usr/share/base-passwd/group.master
 
+# requested by the CUPS maintainer https://salsa.debian.org/printing-team/cups/-/merge_requests/11#note_737578
+echo "g lpadmin"
+
 echo
 
 # treat "nobody:nogroup" specially: same ID, but different name, so prevent creating a "nobody" group

@@ -13,8 +13,6 @@ from glob import glob
 system_unit_dir = subprocess.check_output(
     ['pkg-config', '--variable=systemdsystemunitdir', 'systemd'],
     universal_newlines=True).strip()
-systemd_sysv_install = os.path.join(os.path.dirname(system_unit_dir),
-                                    'systemd-sysv-install')
 
 
 class EnableTests(unittest.TestCase):
@@ -49,29 +47,6 @@ WantedBy=multi-user.target
 
         return unit
 
-    def create_sysv(self, suffix='', enable=False):
-        '''Create a test SysV script'''
-
-        script = '/etc/init.d/test_enable%s' % suffix
-        with open(script, 'w') as f:
-            f.write('''/bin/sh
-### BEGIN INIT INFO
-# Provides:          test_enable%s
-# Required-Start:    $remote_fs $syslog
-# Required-Stop:     $remote_fs $syslog
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: Testsuite script%s
-### END INIT INFO
-
-echo hello
-''' % (suffix, suffix))
-        os.chmod(script, 0o755)
-
-        if enable:
-            subprocess.check_call(
-                [systemd_sysv_install, 'enable', os.path.basename(script)])
-
     def assertEnabled(self, enabled, unit='test_enable.service'):
         '''assert that given unit has expected state'''
 
@@ -87,7 +62,7 @@ echo hello
             self.assertEqual(out, 'disabled')
 
     def test_unit_enable(self):
-        '''no sysv: enable unit'''
+        '''enable unit'''
 
         self.create_unit()
         self.assertEnabled(False)
@@ -110,7 +85,7 @@ echo hello
         self.assertEnabled(True)
 
     def test_unit_disable(self):
-        '''no sysv: disable unit'''
+        '''disable unit'''
 
         self.create_unit(enable=True)
         self.assertEnabled(True)
@@ -130,65 +105,8 @@ echo hello
         subprocess.check_call(['systemctl', 'disable', 'test_enable.service'])
         self.assertEnabled(False)
 
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_unit_sysv_enable(self):
-        '''with sysv: enable unit'''
-
-        self.create_unit()
-        self.create_sysv()
-        self.assertEnabled(False)
-        # also works without .service suffix
-        self.assertEnabled(False, unit='test_enable')
-
-        subprocess.check_call(['systemctl', 'enable', 'test_enable'])
-
-        self.assertEnabled(True)
-        # also works without .service suffix
-        self.assertEnabled(True, unit='test_enable')
-
-        l = '/etc/systemd/system/multi-user.target.wants/test_enable.service'
-        self.assertTrue(os.path.islink(l))
-        self.assertTrue(os.readlink(l) == system_unit_dir + '/test_enable.service' or
-                        os.readlink(l) == '../test_enable.service')
-
-        # enabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(len(l), 1, 'expect one symlink in %s' % repr(l))
-        self.assertEqual(os.readlink(l[0]), '../init.d/test_enable')
-
-        # enable should be idempotent
-        subprocess.check_call(['systemctl', 'enable', 'test_enable.service'])
-        self.assertEnabled(True)
-
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_unit_sysv_disable(self):
-        '''with sysv: disable unit'''
-
-        self.create_unit(enable=True)
-        self.create_sysv(enable=True)
-        self.assertEnabled(True)
-        # also works without .service suffix
-        self.assertEnabled(True, unit='test_enable')
-
-        subprocess.check_call(['systemctl', 'disable', 'test_enable'])
-
-        self.assertEnabled(False)
-        # also works without .service suffix
-        self.assertEnabled(False, unit='test_enable')
-
-        l = '/etc/systemd/system/multi-user.target.wants/test_enable.service'
-        self.assertFalse(os.path.islink(l))
-
-        # disabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(l, [])
-
-        # disable should be idempotent
-        subprocess.check_call(['systemctl', 'enable', 'test_enable.service'])
-        self.assertEnabled(True)
-
     def test_unit_alias_enable(self):
-        '''no sysv: enable unit with an alias'''
+        '''enable unit with an alias'''
 
         u = self.create_unit()
         with open(u, 'a') as f:
@@ -213,7 +131,7 @@ echo hello
                         os.readlink(l) == 'test_enable.service')
 
     def test_unit_alias_disable(self):
-        '''no sysv: disable unit with an alias'''
+        '''disable unit with an alias'''
 
         u = self.create_unit()
         with open(u, 'a') as f:
@@ -232,96 +150,6 @@ echo hello
         # alias symlink
         l = '/etc/systemd/system/test_enablea.service'
         self.assertFalse(os.path.islink(l))
-
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_unit_sysv_alias_enable(self):
-        '''with sysv: enable unit with an alias'''
-
-        u = self.create_unit()
-        with open(u, 'a') as f:
-            f.write('Alias=test_enablea.service\n')
-        self.create_sysv()
-
-        self.assertEnabled(False)
-
-        subprocess.check_call(['systemctl', 'enable', 'test_enable'])
-
-        # enablement symlink
-        l = '/etc/systemd/system/multi-user.target.wants/test_enable.service'
-        self.assertTrue(os.path.islink(l))
-        self.assertTrue(os.readlink(l) == system_unit_dir + '/test_enable.service' or
-                        os.readlink(l) == '../test_enable.service')
-
-        # alias symlink
-        l = '/etc/systemd/system/test_enablea.service'
-        self.assertTrue(os.path.islink(l))
-        self.assertTrue(os.readlink(l) == system_unit_dir + '/test_enable.service' or
-                        os.readlink(l) == 'test_enable.service')
-
-        # enabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(len(l), 1, 'expect one symlink in %s' % repr(l))
-        self.assertEqual(os.readlink(l[0]), '../init.d/test_enable')
-
-        self.assertEnabled(True)
-
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_unit_sysv_alias_disable(self):
-        '''with sysv: disable unit with an alias'''
-
-        u = self.create_unit(enable=True)
-        with open(u, 'a') as f:
-            f.write('Alias=test_enablea.service\n')
-        os.symlink(system_unit_dir + '/test_enable.service',
-                   '/etc/systemd/system/test_enablea.service')
-        self.create_sysv(enable=True)
-
-        subprocess.check_call(['systemctl', 'disable', 'test_enable'])
-
-        # enablement symlink
-        l = '/etc/systemd/system/multi-user.target.wants/test_enable.service'
-        self.assertFalse(os.path.islink(l))
-
-        # alias symlink
-        l = '/etc/systemd/system/test_enablea.service'
-        self.assertFalse(os.path.islink(l))
-
-        # disabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(l, [])
-
-        self.assertEnabled(False)
-
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_sysv_enable(self):
-        '''only sysv: enable'''
-
-        self.create_sysv()
-        subprocess.check_call(['systemctl', 'enable', 'test_enable'])
-
-        # enabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(len(l), 1, 'expect one symlink in %s' % repr(l))
-        self.assertEqual(os.readlink(l[0]), '../init.d/test_enable')
-
-        # enable should be idempotent
-        subprocess.check_call(['systemctl', 'enable', 'test_enable'])
-        self.assertEnabled(True)
-
-    @unittest.skipIf('pkg.systemd.upstream' in os.environ.get('DEB_BUILD_PROFILES', ''), 'sysvinit support disabled upstream')
-    def test_sysv_disable(self):
-        '''only sysv: disable'''
-
-        self.create_sysv(enable=True)
-        subprocess.check_call(['systemctl', 'disable', 'test_enable'])
-
-        # disabled the sysv script
-        l = glob('/etc/rc2.d/S??test_enable')
-        self.assertEqual(l, [])
-
-        # disable should be idempotent
-        subprocess.check_call(['systemctl', 'disable', 'test_enable'])
-        self.assertEnabled(False)
 
     def test_unit_link(self):
         '''systemctl link'''

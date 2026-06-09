@@ -40,8 +40,7 @@ static inline void clear_log_syntax_callback(dummy_t *dummy) {
           set_log_syntax_callback(/* cb= */ NULL, /* userdata= */ NULL);
 }
 
-const char* log_target_to_string(LogTarget target) _const_;
-LogTarget log_target_from_string(const char *s) _pure_;
+DECLARE_STRING_TABLE_LOOKUP(log_target, LogTarget);
 void log_set_target(LogTarget target);
 void log_set_target_and_open(LogTarget target);
 int log_set_target_from_string(const char *e);
@@ -381,6 +380,8 @@ int log_syntax_parse_error_internal(
 void log_setup(void);
 
 const char* _log_set_prefix(const char *prefix, bool force);
+
+void log_prefix_swap(const char **prefix);
 static inline const char* _log_unset_prefixp(const char **p) {
         assert(p);
         _log_set_prefix(*p, true);

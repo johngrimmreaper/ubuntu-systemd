@@ -50,6 +50,8 @@ static int get_line(JournalImporter *imp, char **line, size_t *size) {
         char *c = NULL;
 
         assert(imp);
+        assert(line);
+        assert(size);
         assert(imp->state == IMPORTER_STATE_LINE);
         assert(imp->offset <= imp->filled);
         assert(imp->filled <= MALLOC_SIZEOF_SAFE(imp->buf));
@@ -349,7 +351,7 @@ int journal_importer_process_data(JournalImporter *imp) {
                                 return 0;
                         }
 
-                        /* replace \n with = */
+                        /* replace '\n' with '=' */
                         line[n-1] = '=';
 
                         imp->field_len = n;

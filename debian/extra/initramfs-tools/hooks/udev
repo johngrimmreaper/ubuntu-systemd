@@ -37,6 +37,9 @@ fi
 # copy .link files containing interface naming definitions
 mkdir -p "$DESTDIR/usr/lib/systemd/network/"
 find -L /usr/lib/systemd/network -name '*.link*' -execdir cp -r -pt "$DESTDIR/usr/lib/systemd/network/" '{}' +
+if [ -d /usr/local/lib/systemd/network ]; then
+  find -L /usr/local/lib/systemd/network -name '*.link*' -execdir cp -r -pt "$DESTDIR/usr/lib/systemd/network/" '{}' +
+fi
 if [ -d /etc/systemd/network ]; then
   find -L /etc/systemd/network -name '*.link*' -execdir cp -r -pt "$DESTDIR/usr/lib/systemd/network/" '{}' +
 fi

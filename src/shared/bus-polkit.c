@@ -250,13 +250,10 @@ static AsyncPolkitQuery* async_polkit_query_free(AsyncPolkitQuery *q) {
 DEFINE_PRIVATE_TRIVIAL_REF_UNREF_FUNC(AsyncPolkitQuery, async_polkit_query, async_polkit_query_free);
 DEFINE_TRIVIAL_CLEANUP_FUNC(AsyncPolkitQuery*, async_polkit_query_unref);
 
-DEFINE_HASH_OPS_WITH_VALUE_DESTRUCTOR(
+DEFINE_PRIVATE_HASH_OPS_WITH_VALUE_DESTRUCTOR(
                 async_polkit_query_hash_ops,
-                void,
-                trivial_hash_func,
-                trivial_compare_func,
-                AsyncPolkitQuery,
-                async_polkit_query_unref);
+                void, trivial_hash_func, trivial_compare_func,
+                AsyncPolkitQuery, async_polkit_query_unref);
 
 static int async_polkit_defer(sd_event_source *s, void *userdata) {
         AsyncPolkitQuery *q = ASSERT_PTR(userdata);
@@ -349,7 +346,7 @@ static int async_polkit_process_reply(sd_bus_message *reply, AsyncPolkitQuery *q
         if (r < 0)
                 return r;
 
-        /* Now, let's dispatch the original message a second time be re-enqueing. This will then traverse the
+        /* Now, let's dispatch the original message a second time be re-enqueuing. This will then traverse the
          * whole message processing again, and thus re-validating and re-retrieving the "userdata" field
          * again.
          *
@@ -485,9 +482,9 @@ static int async_polkit_query_check_action(
  *     processed and the polkit action to verify.
  * 2.  bus_verify_polkit_async() checks the registry for an existing query object associated with the
  *     message. Let's assume this is the first call, so it finds nothing.
- * 3.  A new AsyncPolkitQuery object is created and an async. D-Bus call to polkit is made. The
+ * 3.  A new AsyncPolkitQuery object is created and an async D-Bus call to polkit is made. The
  *     function then returns 0. The method handler returns 1 to tell sd-bus that the processing of
- *    the message has been interrupted.
+ *     the message has been interrupted.
  * 4.  (Later) A reply from polkit is received and async_polkit_callback() is called.
  * 5.  async_polkit_callback() reads the reply and stores its result in the passed query.
  * 6.  async_polkit_callback() enqueues the original message again.

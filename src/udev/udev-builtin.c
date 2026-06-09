@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
-#include <getopt.h>
 #include <stdio.h>
 
 #include "alloc-util.h"
@@ -29,6 +28,9 @@ static const UdevBuiltin *const builtins[_UDEV_BUILTIN_MAX] = {
         [UDEV_BUILTIN_NET_ID]        = &udev_builtin_net_id,
         [UDEV_BUILTIN_NET_LINK]      = &udev_builtin_net_setup_link,
         [UDEV_BUILTIN_PATH_ID]       = &udev_builtin_path_id,
+#if HAVE_TPM2
+        [UDEV_BUILTIN_TPM2_ID]       = &udev_builtin_tpm2_id,
+#endif
 #if HAVE_ACL
         [UDEV_BUILTIN_UACCESS]       = &udev_builtin_uaccess,
 #endif
@@ -125,8 +127,6 @@ int udev_builtin_run(UdevEvent *event, UdevBuiltinCommand cmd, const char *comma
         if (r < 0)
                 return r;
 
-        /* we need '0' here to reset the internal state */
-        optind = 0;
         return builtins[cmd]->cmd(event, strv_length(argv), argv);
 }
 

@@ -10,6 +10,7 @@
 
 #include "sd-bus.h"
 #include "sd-dhcp-client.h"
+#include "sd-dhcp-relay.h"
 #include "sd-dhcp-server.h"
 #include "sd-dhcp6-client.h"
 #include "sd-dhcp6-lease.h"
@@ -18,10 +19,12 @@
 #include "sd-ndisc.h"
 #include "sd-netlink.h"
 #include "sd-radv.h"
+#include "sd-varlink.h"
 
 #include "alloc-util.h"
 #include "arphrd-util.h"
 #include "bitfield.h"
+#include "device-private.h"
 #include "device-util.h"
 #include "dns-domain.h"
 #include "errno-util.h"
@@ -39,6 +42,7 @@
 #include "networkd-bridge-mdb.h"
 #include "networkd-bridge-vlan.h"
 #include "networkd-dhcp-prefix-delegation.h"
+#include "networkd-dhcp-relay.h"
 #include "networkd-dhcp-server.h"
 #include "networkd-dhcp4.h"
 #include "networkd-dhcp6.h"
@@ -63,8 +67,8 @@
 #include "networkd-state-file.h"
 #include "networkd-sysctl.h"
 #include "networkd-wifi.h"
+#include "networkd-wwan-bus.h"
 #include "ordered-set.h"
-#include "parse-util.h"
 #include "set.h"
 #include "socket-util.h"
 #include "string-table.h"
@@ -238,6 +242,8 @@ static void link_free_engines(Link *link) {
         if (!link)
                 return;
 
+        link->dhcp_relay_interface = sd_dhcp_relay_interface_unref(link->dhcp_relay_interface);
+        link->dhcp_relay_interface_compat = sd_dhcp_relay_interface_unref(link->dhcp_relay_interface_compat);
         link->dhcp_server = sd_dhcp_server_unref(link->dhcp_server);
 
         link->dhcp_client = sd_dhcp_client_unref(link->dhcp_client);
@@ -286,7 +292,6 @@ static Link* link_free(Link *link) {
         free(link->previous_ssid);
         free(link->driver);
 
-        unlink_and_free(link->lease_file);
         unlink_and_free(link->state_file);
 
         sd_device_unref(link->dev);
@@ -423,6 +428,14 @@ int link_stop_engines(Link *link, bool may_keep_dynamic) {
                 ndisc_flush(link);
         }
 
+        r = sd_dhcp_relay_interface_stop(link->dhcp_relay_interface);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCP relay agent: %m"));
+
+        r = sd_dhcp_relay_interface_stop(link->dhcp_relay_interface_compat);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCP relay agent (compat): %m"));
+
         r = sd_dhcp_server_stop(link->dhcp_server);
         if (r < 0)
                 RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCPv4 server: %m"));
@@ -529,6 +542,9 @@ void link_check_ready(Link *link) {
         if (!link->sr_iov_configured)
                 return (void) log_link_debug(link, "%s(): SR-IOV is not configured.", __func__);
 
+        if (!link->bearer_configured)
+                return (void) log_link_debug(link, "%s(): Bearer has not been applied.", __func__);
+
         /* IPv6LL is assigned after the link gains its carrier. */
         if (!link->network->configure_without_carrier &&
             link_ipv6ll_enabled(link) &&
@@ -538,7 +554,7 @@ void link_check_ready(Link *link) {
         /* All static addresses must be ready. */
         bool has_static_address = false;
         SET_FOREACH(a, link->addresses) {
-                if (a->source != NETWORK_CONFIG_SOURCE_STATIC)
+                if (!IN_SET(a->source, NETWORK_CONFIG_SOURCE_STATIC, NETWORK_CONFIG_SOURCE_MODEM_MANAGER))
                         continue;
                 if (!address_is_ready(a))
                         return (void) log_link_debug(link, "%s(): static address %s is not ready.", __func__,
@@ -735,6 +751,10 @@ static int link_acquire_dynamic_ipv4_conf(Link *link) {
                         log_link_debug(link, "Acquiring IPv4 link-local address.");
         }
 
+        r = link_start_dhcp_relay(link);
+        if (r < 0)
+                return log_link_warning_errno(link, r, "Could not start DHCP relay agent: %m");
+
         r = link_start_dhcp4_server(link);
         if (r < 0)
                 return log_link_warning_errno(link, r, "Could not start DHCP server: %m");
@@ -809,6 +829,46 @@ int link_ipv6ll_gained(Link *link) {
         return 0;
 }
 
+int link_ipv6ll_lost(Link *link, const struct in6_addr *dropped_ipv6ll, bool has_replacement) {
+        int ret = 0, r;
+
+        assert(link);
+        assert(dropped_ipv6ll);
+
+        if (!IN_SET(link->state, LINK_STATE_CONFIGURING, LINK_STATE_CONFIGURED))
+                return 0;
+
+        log_link_info(link, "Lost IPv6LL address %s%s.",
+                      IN6_ADDR_TO_STRING(dropped_ipv6ll),
+                      has_replacement ? ", switching to alternate IPv6LL source" : "");
+
+        r = sd_dhcp6_client_stop(link->dhcp6_client);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop DHCPv6 client: %m"));
+
+        /* DHCPv6 must be restarted to switch the client's source address, while NDisc and
+         * RADV can switch to the replacement IPv6LL in link_ipv6ll_gained() without flushing
+         * learned state. Keep link->ndisc_configured as-is in this path. */
+        if (has_replacement)
+                return ret;
+
+        r = ndisc_stop(link);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv6 Router Discovery: %m"));
+        link->ndisc_configured = false;
+        ndisc_flush(link);
+
+        r = sd_radv_stop(link->radv);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not stop IPv6 Router Advertisement: %m"));
+
+        r = link_request_stacked_netdevs(link, NETDEV_LOCAL_ADDRESS_IPV6LL);
+        if (r < 0)
+                RET_GATHER(ret, log_link_warning_errno(link, r, "Could not reconfigure stacked netdevs after IPv6LL loss: %m"));
+
+        return ret;
+}
+
 int link_handle_bound_to_list(Link *link) {
         bool required_up = false;
         Link *l;
@@ -857,11 +917,12 @@ static int link_put_carrier(Link *link, Link *carrier, Hashmap **h) {
 
         assert(link);
         assert(carrier);
+        assert(h);
 
         if (link == carrier)
                 return 0;
 
-        if (hashmap_get(*h, INT_TO_PTR(carrier->ifindex)))
+        if (hashmap_contains(*h, INT_TO_PTR(carrier->ifindex)))
                 return 0;
 
         r = hashmap_ensure_put(h, NULL, INT_TO_PTR(carrier->ifindex), carrier);
@@ -1151,6 +1212,8 @@ static int link_drop_dynamic_config(Link *link, Network *network) {
         RET_GATHER(r, link_drop_dhcp4_config(link, network));
         RET_GATHER(r, link_drop_dhcp6_config(link, network));
         RET_GATHER(r, link_drop_dhcp_pd_config(link, network));
+        link->dhcp_relay_interface = sd_dhcp_relay_interface_unref(link->dhcp_relay_interface);
+        link->dhcp_relay_interface_compat = sd_dhcp_relay_interface_unref(link->dhcp_relay_interface_compat);
         link->dhcp_server = sd_dhcp_server_unref(link->dhcp_server);
         link->lldp_rx = sd_lldp_rx_unref(link->lldp_rx); /* TODO: keep the received neighbors. */
         link->lldp_tx = sd_lldp_tx_unref(link->lldp_tx);
@@ -1269,6 +1332,10 @@ static int link_configure(Link *link) {
         if (r < 0)
                 return r;
 
+        r = link_request_dhcp_relay(link);
+        if (r < 0)
+                return r;
+
         r = link_request_dhcp_server(link);
         if (r < 0)
                 return r;
@@ -1286,6 +1353,10 @@ static int link_configure(Link *link) {
                 return r;
 
         r = link_request_static_configs(link);
+        if (r < 0)
+                return r;
+
+        r = link_modem_reconfigure(link);
         if (r < 0)
                 return r;
 
@@ -1325,13 +1396,9 @@ static int link_get_network(Link *link, Network **ret) {
                         continue;
 
                 if (network->match.ifname && link->dev) {
-                        uint8_t name_assign_type = NET_NAME_UNKNOWN;
-                        const char *attr;
-
-                        if (sd_device_get_sysattr_value(link->dev, "name_assign_type", &attr) >= 0)
-                                (void) safe_atou8(attr, &name_assign_type);
-
-                        warn = name_assign_type == NET_NAME_ENUM;
+                        uint8_t name_assign_type;
+                        if (device_get_sysattr_u8(link->dev, "name_assign_type", &name_assign_type) >= 0)
+                                warn = name_assign_type == NET_NAME_ENUM;
                 }
 
                 log_link_full(link, warn ? LOG_WARNING : LOG_DEBUG,
@@ -1501,6 +1568,7 @@ typedef struct LinkReconfigurationData {
         Link *link;
         LinkReconfigurationFlag flags;
         sd_bus_message *message;
+        sd_varlink *varlink;
         unsigned *counter;
 } LinkReconfigurationData;
 
@@ -1510,6 +1578,7 @@ static LinkReconfigurationData* link_reconfiguration_data_free(LinkReconfigurati
 
         link_unref(data->link);
         sd_bus_message_unref(data->message);
+        sd_varlink_unref(data->varlink);
 
         return mfree(data);
 }
@@ -1520,23 +1589,29 @@ static void link_reconfiguration_data_destroy_callback(LinkReconfigurationData *
         int r;
 
         assert(data);
+        assert(!data->message || !data->varlink); /* D-Bus and Varlink callers are mutually exclusive */
 
-        if (data->message) {
-                if (data->counter) {
-                        assert(*data->counter > 0);
-                        (*data->counter)--;
-                }
+        if (data->counter) {
+                assert(*data->counter > 0);
+                (*data->counter)--;
+        }
 
-                if (!data->counter || *data->counter <= 0) {
-                        /* Update the state files before replying the bus method. Otherwise,
-                         * systemd-networkd-wait-online following networkctl reload/reconfigure may read an
-                         * outdated state file and wrongly handle an interface is already in the configured
-                         * state. */
-                        (void) manager_clean_all(data->manager);
+        if (!data->counter || *data->counter == 0) {
+                /* Update the state files before replying. Otherwise, systemd-networkd-wait-online following
+                 * networkctl reload/reconfigure may read an outdated state file and wrongly consider an
+                 * interface already in the configured state. */
+                (void) manager_clean_all(data->manager);
 
+                if (data->message) {
                         r = sd_bus_reply_method_return(data->message, NULL);
                         if (r < 0)
                                 log_warning_errno(r, "Failed to reply for DBus method, ignoring: %m");
+                }
+
+                if (data->varlink) {
+                        r = sd_varlink_reply(data->varlink, NULL);
+                        if (r < 0)
+                                log_warning_errno(r, "Failed to reply to Varlink request, ignoring: %m");
                 }
         }
 
@@ -1560,7 +1635,7 @@ static int link_reconfigure_handler(sd_netlink *rtnl, sd_netlink_message *m, Lin
         return r;
 }
 
-int link_reconfigure_full(Link *link, LinkReconfigurationFlag flags, sd_bus_message *message, unsigned *counter) {
+int link_reconfigure_full(Link *link, LinkReconfigurationFlag flags, sd_bus_message *message, sd_varlink *varlink, unsigned *counter) {
         _cleanup_(sd_netlink_message_unrefp) sd_netlink_message *req = NULL;
         _cleanup_(link_reconfiguration_data_freep) LinkReconfigurationData *data = NULL;
         int r;
@@ -1568,6 +1643,7 @@ int link_reconfigure_full(Link *link, LinkReconfigurationFlag flags, sd_bus_mess
         assert(link);
         assert(link->manager);
         assert(link->manager->rtnl);
+        assert(!message || !varlink); /* D-Bus and Varlink callers are mutually exclusive */
 
         /* When the link is in the pending or initialized state, link_reconfigure_impl() will be called later
          * by link_initialized() or link_initialized_and_synced(). To prevent the function from being called
@@ -1586,6 +1662,7 @@ int link_reconfigure_full(Link *link, LinkReconfigurationFlag flags, sd_bus_mess
                 .link = link_ref(link),
                 .flags = flags,
                 .message = sd_bus_message_ref(message), /* message may be NULL, but _ref() works fine. */
+                .varlink = sd_varlink_ref(varlink),     /* varlink may be NULL, but _ref() works fine. */
                 .counter = counter,
         };
 
@@ -1658,7 +1735,7 @@ static int link_initialized(Link *link, sd_device *device) {
 
         /* Always replace with the new sd_device object. As the sysname (and possibly other properties
          * or sysattrs) may be outdated. */
-        device_unref_and_replace(link->dev, device);
+        device_unref_and_replace_new_ref(link->dev, device);
 
         r = link_managed_by_us(link);
         if (r <= 0)
@@ -2330,38 +2407,6 @@ static int link_update_driver(Link *link, sd_netlink_message *message) {
         return 1; /* needs reconfigure */
 }
 
-static int link_update_permanent_hardware_address_from_ethtool(Link *link, sd_netlink_message *message) {
-        int r;
-
-        assert(link);
-        assert(link->manager);
-        assert(message);
-
-        if (link->ethtool_permanent_hw_addr_read)
-                return 0;
-
-        /* When udevd is running, read the permanent hardware address after the interface is
-         * initialized by udevd. Otherwise, ethtool may not work correctly. See issue #22538.
-         * When udevd is not running, read the value when the interface is detected. */
-        if (udev_available() && !link->dev)
-                return 0;
-
-        /* If the interface does not have a hardware address, then it will not have a permanent address either. */
-        r = netlink_message_read_hw_addr(message, IFLA_ADDRESS, NULL);
-        if (r == -ENODATA)
-                return 0;
-        if (r < 0)
-                return log_link_debug_errno(link, r, "Failed to read IFLA_ADDRESS attribute: %m");
-
-        link->ethtool_permanent_hw_addr_read = true;
-
-        r = ethtool_get_permanent_hw_addr(&link->manager->ethtool_fd, link->ifname, &link->permanent_hw_addr);
-        if (r < 0)
-                log_link_debug_errno(link, r, "Permanent hardware address not found, continuing without: %m");
-
-        return 0;
-}
-
 static int link_update_permanent_hardware_address(Link *link, sd_netlink_message *message) {
         int r;
 
@@ -2373,15 +2418,10 @@ static int link_update_permanent_hardware_address(Link *link, sd_netlink_message
                 return 0;
 
         r = netlink_message_read_hw_addr(message, IFLA_PERM_ADDRESS, &link->permanent_hw_addr);
-        if (r < 0) {
-                if (r != -ENODATA)
-                        return log_link_debug_errno(link, r, "Failed to read IFLA_PERM_ADDRESS attribute: %m");
-
-                /* Fallback to ethtool for kernels older than v5.6 (f74877a5457d34d604dba6dbbb13c4c05bac8b93). */
-                r = link_update_permanent_hardware_address_from_ethtool(link, message);
-                if (r < 0)
-                        return r;
-        }
+        if (r == -ENODATA)
+                return 0;
+        if (r < 0)
+                return log_link_debug_errno(link, r, "Failed to read IFLA_PERM_ADDRESS attribute: %m");
 
         if (link->permanent_hw_addr.length > 0)
                 log_link_debug(link, "Saved permanent hardware address: %s", HW_ADDR_TO_STR(&link->permanent_hw_addr));
@@ -2627,6 +2667,12 @@ static int link_update_name(Link *link, sd_netlink_message *message) {
                         return log_link_debug_errno(link, r, "Failed to update interface name in NDisc: %m");
         }
 
+        if (link->dhcp_relay_interface) {
+                r = sd_dhcp_relay_interface_set_ifname(link->dhcp_relay_interface, link->ifname);
+                if (r < 0)
+                        return log_link_debug_errno(link, r, "Failed to update interface name in DHCP relay interface: %m");
+        }
+
         if (link->dhcp_server) {
                 r = sd_dhcp_server_set_ifname(link->dhcp_server, link->ifname);
                 if (r < 0)
@@ -2730,7 +2776,7 @@ static Link *link_drop_or_unref(Link *link) {
 DEFINE_TRIVIAL_CLEANUP_FUNC(Link*, link_drop_or_unref);
 
 static int link_new(Manager *manager, sd_netlink_message *message, Link **ret) {
-        _cleanup_free_ char *ifname = NULL, *kind = NULL, *state_file = NULL, *lease_file = NULL;
+        _cleanup_free_ char *ifname = NULL, *kind = NULL, *state_file = NULL;
         _cleanup_(link_drop_or_unrefp) Link *link = NULL;
         unsigned short iftype;
         int r, ifindex;
@@ -2768,9 +2814,6 @@ static int link_new(Manager *manager, sd_netlink_message *message, Link **ret) {
                 /* Do not update state files when running in test mode. */
                 if (asprintf(&state_file, "/run/systemd/netif/links/%d", ifindex) < 0)
                         return log_oom_debug();
-
-                if (asprintf(&lease_file, "/run/systemd/netif/leases/%d", ifindex) < 0)
-                        return log_oom_debug();
         }
 
         link = new(Link, 1);
@@ -2792,7 +2835,6 @@ static int link_new(Manager *manager, sd_netlink_message *message, Link **ret) {
                 .ipv6ll_address_gen_mode = _IPV6_LINK_LOCAL_ADDRESS_GEN_MODE_INVALID,
 
                 .state_file = TAKE_PTR(state_file),
-                .lease_file = TAKE_PTR(lease_file),
 
                 .n_dns = UINT_MAX,
                 .dns_default_route = -1,

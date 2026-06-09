@@ -8,7 +8,7 @@ typedef struct SubMount {
         int mount_fd;
 } SubMount;
 
-void sub_mount_array_free(SubMount *s, size_t n);
+void sub_mount_array_free(SubMount *array, size_t n);
 
 int get_sub_mounts(const char *prefix, SubMount **ret_mounts, size_t *ret_n_mounts);
 int bind_mount_submounts(
@@ -166,7 +166,7 @@ int make_mount_point_inode_from_path(const char *source, const char *dest, mode_
 
 int trigger_automount_at(int dir_fd, const char *path);
 
-unsigned long credentials_fs_mount_flags(bool ro);
+unsigned long credentials_fs_mount_flags(bool ro) _const_;
 int fsmount_credentials_fs(int *ret_fsfd);
 int mount_credentials_fs(const char *path);
 

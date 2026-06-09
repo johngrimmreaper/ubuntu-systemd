@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
-#include <sched.h>
 #include <stdlib.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
@@ -22,7 +21,7 @@
 #include "hashmap.h"
 #include "libmount-util.h"
 #include "log.h"
-#include "mkdir-label.h"
+#include "mkdir.h"
 #include "mount-util.h"
 #include "mountpoint-util.h"
 #include "namespace-util.h"
@@ -452,7 +451,7 @@ int bind_remount_one_with_mountinfo(
 
         rewind(proc_self_mountinfo);
 
-        r = dlopen_libmount();
+        r = dlopen_libmount(LOG_DEBUG);
         if (r < 0)
                 return r;
 
@@ -901,7 +900,7 @@ int mount_option_mangle(
          * The validity of options stored in '*ret_remaining_options' is not checked.
          * If 'options' is NULL, this just copies 'mount_flags' to *ret_mount_flags. */
 
-        r = dlopen_libmount();
+        r = dlopen_libmount(LOG_DEBUG);
         if (r < 0)
                 return r;
 
@@ -968,7 +967,7 @@ static int mount_in_namespace_legacy(
         bool mount_slave_created = false, mount_slave_mounted = false,
                 mount_tmp_created = false, mount_tmp_mounted = false,
                 mount_outside_created = false, mount_outside_mounted = false;
-        pid_t child;
+        _cleanup_(pidref_done) PidRef child = PIDREF_NULL;
         int r;
 
         assert(chased_src_path);
@@ -1092,8 +1091,6 @@ static int mount_in_namespace_legacy(
         r = namespace_fork(
                         "(sd-bindmnt)",
                         "(sd-bindmnt-inner)",
-                        /* except_fds= */ NULL,
-                        /* n_except_fds= */ 0,
                         FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM,
                         pidns_fd,
                         mntns_fd,
@@ -1139,7 +1136,7 @@ static int mount_in_namespace_legacy(
 
         errno_pipe_fd[1] = safe_close(errno_pipe_fd[1]);
 
-        r = wait_for_terminate_and_check("(sd-bindmnt)", child, 0);
+        r = pidref_wait_for_terminate_and_check("(sd-bindmnt)", &child, 0);
         if (r < 0) {
                 log_debug_errno(r, "Failed to wait for child: %m");
                 goto finish;
@@ -1242,7 +1239,7 @@ static int mount_in_namespace(
         _cleanup_(dissected_image_unrefp) DissectedImage *img = NULL;
         _cleanup_close_ int new_mount_fd = -EBADF;
         _cleanup_close_pair_ int errno_pipe_fd[2] = EBADF_PAIR;
-        pid_t child;
+        _cleanup_(pidref_done) PidRef child = PIDREF_NULL;
 
         if (flags & MOUNT_IN_NAMESPACE_IS_IMAGE) {
                 r = verity_dissect_and_mount(
@@ -1286,8 +1283,6 @@ static int mount_in_namespace(
 
         r = namespace_fork("(sd-bindmnt)",
                            "(sd-bindmnt-inner)",
-                           /* except_fds= */ NULL,
-                           /* n_except_fds= */ 0,
                            FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM,
                            pidns_fd,
                            mntns_fd,
@@ -1335,7 +1330,7 @@ static int mount_in_namespace(
 
         errno_pipe_fd[1] = safe_close(errno_pipe_fd[1]);
 
-        r = wait_for_terminate_and_check("(sd-bindmnt)", child, 0);
+        r = pidref_wait_for_terminate_and_check("(sd-bindmnt)", &child, 0);
         if (r < 0)
                 return log_debug_errno(r, "Failed to wait for child: %m");
         if (r != EXIT_SUCCESS) {
@@ -1457,12 +1452,12 @@ int mount_fd_clone(int mount_fd, bool recursive, int *replacement_fd) {
                 return log_debug_errno(errno, "Failed to open pipe: %m");
 
         /* Fork a child. Note that we set FORK_NEW_MOUNTNS|FORK_MOUNTNS_SLAVE here, i.e. get a new mount namespace */
-        r = safe_fork_full(
+        r = pidref_safe_fork_full(
                         "(sd-clonemnt)",
                         /* stdio_fds= */ NULL,
                         (int[]) { mount_fd, transfer_fds[1], errno_pipe_fds[1] }, 3,
                         FORK_RESET_SIGNALS|FORK_CLOSE_ALL_FDS|FORK_DEATHSIG_SIGKILL|FORK_REOPEN_LOG|FORK_WAIT|FORK_NEW_MOUNTNS|FORK_MOUNTNS_SLAVE,
-                        /* ret_pid= */ NULL);
+                        /* ret= */ NULL);
         if (r < 0) {
                 errno_pipe_fds[1] = safe_close(errno_pipe_fds[1]);
 
@@ -1753,14 +1748,7 @@ static void sub_mount_clear(SubMount *s) {
         s->mount_fd = safe_close(s->mount_fd);
 }
 
-void sub_mount_array_free(SubMount *s, size_t n) {
-        assert(s || n == 0);
-
-        for (size_t i = 0; i < n; i++)
-                sub_mount_clear(s + i);
-
-        free(s);
-}
+DEFINE_ARRAY_FREE_FUNC(sub_mount_array_free, SubMount, sub_mount_clear);
 
 #if HAVE_LIBMOUNT
 static int sub_mount_compare(const SubMount *a, const SubMount *b) {
@@ -1835,13 +1823,11 @@ int get_sub_mounts(const char *prefix, SubMount **ret_mounts, size_t *ret_n_moun
                         continue;
                 }
 
-                mount_fd = open(path, O_CLOEXEC|O_PATH);
-                if (mount_fd < 0) {
-                        if (errno == ENOENT) /* The path may be hidden by another over-mount or already unmounted. */
-                                continue;
-
-                        return log_debug_errno(errno, "Failed to open subtree of mounted filesystem '%s': %m", path);
-                }
+                mount_fd = RET_NERRNO(open_tree(AT_FDCWD, path, OPEN_TREE_CLONE|OPEN_TREE_CLOEXEC|AT_RECURSIVE));
+                if (mount_fd == -ENOENT) /* The path may be hidden by another over-mount or already unmounted. */
+                        continue;
+                if (mount_fd < 0)
+                        return log_debug_errno(mount_fd, "Failed to open subtree of mounted filesystem '%s': %m", path);
 
                 p = strdup(path);
                 if (!p)
@@ -1910,9 +1896,7 @@ int bind_mount_submounts(
                         continue;
                 }
 
-                r = mount_follow_verbose(LOG_DEBUG, FORMAT_PROC_FD_PATH(m->mount_fd), t, NULL, MS_BIND|MS_REC, NULL);
-                if (r < 0 && ret == 0)
-                        ret = r;
+                RET_GATHER(ret, RET_NERRNO(move_mount(m->mount_fd, "", AT_FDCWD, t, MOVE_MOUNT_F_EMPTY_PATH)));
         }
 
         return ret;
@@ -1956,7 +1940,7 @@ int trigger_automount_at(int dir_fd, const char *path) {
 
 unsigned long credentials_fs_mount_flags(bool ro) {
         /* A tight set of mount flags for credentials mounts */
-        return MS_NODEV|MS_NOEXEC|MS_NOSUID|ms_nosymfollow_supported()|(ro ? MS_RDONLY : 0);
+        return MS_NODEV|MS_NOEXEC|MS_NOSUID|MS_NOSYMFOLLOW|(ro ? MS_RDONLY : 0);
 }
 
 int fsmount_credentials_fs(int *ret_fsfd) {
@@ -1997,10 +1981,19 @@ int fsmount_credentials_fs(int *ret_fsfd) {
         if (fsconfig(fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0) < 0)
                 return -errno;
 
-        int mfd = fsmount(fs_fd, FSMOUNT_CLOEXEC,
-                          ms_flags_to_mount_attr(credentials_fs_mount_flags(/* ro= */ false)));
+        unsigned mount_attrs = ms_flags_to_mount_attr(credentials_fs_mount_flags(/* ro = */ false));
+
+        int mfd = RET_NERRNO(fsmount(fs_fd, FSMOUNT_CLOEXEC, mount_attrs));
+        if (mfd == -EINVAL) {
+                /* MS_NOSYMFOLLOW was added in kernel 5.10, but the new mount API counterpart was missing
+                 * until 5.14 (c.f. https://github.com/torvalds/linux/commit/dd8b477f9a3d8edb136207acb3652e1a34a661b7).
+                 *
+                 * TODO: drop this once our baseline is raised to 5.14 */
+                assert(FLAGS_SET(mount_attrs, MOUNT_ATTR_NOSYMFOLLOW));
+                mfd = RET_NERRNO(fsmount(fs_fd, FSMOUNT_CLOEXEC, mount_attrs & ~MOUNT_ATTR_NOSYMFOLLOW));
+        }
         if (mfd < 0)
-                return -errno;
+                return mfd;
 
         if (ret_fsfd)
                 *ret_fsfd = TAKE_FD(fs_fd);
@@ -2067,7 +2060,7 @@ int make_fsmount(
 
                 r = extract_first_word(&p, &word, ",", EXTRACT_KEEP_QUOTE);
                 if (r < 0)
-                        return log_full_errno(error_log_level, r, "Failed to parse mount option string \"%s\": %m", o);
+                        return log_full_errno(error_log_level, r, "Failed to parse mount option string \"%s\": %m", strempty(o));
                 if (r == 0)
                         break;
 

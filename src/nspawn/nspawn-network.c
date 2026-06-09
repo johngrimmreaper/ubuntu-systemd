@@ -177,6 +177,7 @@ int setup_veth(const char *machine_name,
         assert(machine_name);
         assert(pidref_is_set(pid));
         assert(iface_name);
+        assert(provided_mac);
 
         /* Use two different interface name prefixes depending whether
          * we are in bridge mode or not. */
@@ -498,7 +499,7 @@ static int netns_child_begin(int netns_fd, int *ret_original_netns_fd) {
         if (r < 0)
                 return log_error_errno(r, "Failed to mount sysfs on /sys/: %m");
 
-        /* udev_avaliable() might be called previously and the result may be cached.
+        /* udev_available() might be called previously and the result may be cached.
          * Now, we (re-)mount sysfs. Hence, we need to reset the cache. */
         reset_cached_udev_availability();
 
@@ -513,7 +514,10 @@ static int netns_fork_and_wait(int netns_fd, int *ret_original_netns_fd) {
 
         assert(netns_fd >= 0);
 
-        r = safe_fork("(sd-netns)", FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM|FORK_WAIT|FORK_LOG|FORK_NEW_MOUNTNS|FORK_MOUNTNS_SLAVE, NULL);
+        r = pidref_safe_fork(
+                        "(sd-netns)",
+                        FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM|FORK_WAIT|FORK_LOG|FORK_NEW_MOUNTNS|FORK_MOUNTNS_SLAVE,
+                        /* ret= */ NULL);
         if (r < 0)
                 return log_error_errno(r, "Failed to fork process (sd-netns): %m");
         if (r == 0) {

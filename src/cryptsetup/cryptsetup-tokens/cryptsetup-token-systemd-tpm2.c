@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include <libcryptsetup.h>
+#include <syslog.h>
 
 #include "alloc-util.h"
 #include "cryptsetup-token.h"
@@ -60,8 +61,12 @@ _public_ int cryptsetup_token_open_pin(
         assert(ret_password);
         assert(ret_password_len);
 
+        r = DLOPEN_CRYPTSETUP(LOG_DEBUG, SD_ELF_NOTE_DLOPEN_PRIORITY_REQUIRED);
+        if (r < 0)
+                return r;
+
         /* This must not fail at this moment (internal error) */
-        r = crypt_token_json_get(cd, token, &json);
+        r = sym_crypt_token_json_get(cd, token, &json);
         assert(token == r);
         assert(json);
 
@@ -72,7 +77,7 @@ _public_ int cryptsetup_token_open_pin(
         if (usrptr)
                 params = *(systemd_tpm2_plugin_params *)usrptr;
 
-        r = sd_json_parse(json, 0, &v, NULL, NULL);
+        r = sd_json_parse(json, SD_JSON_PARSE_MUST_BE_OBJECT, &v, /* reterr_line= */ NULL, /* reterr_column= */ NULL);
         if (r < 0)
                 return crypt_log_debug_errno(cd, r, "Failed to parse token JSON data: %m");
 
@@ -186,7 +191,10 @@ _public_ void cryptsetup_token_dump(
 
         assert(json);
 
-        r = sd_json_parse(json, 0, &v, NULL, NULL);
+        if (DLOPEN_CRYPTSETUP(LOG_DEBUG, SD_ELF_NOTE_DLOPEN_PRIORITY_REQUIRED) < 0)
+                return;
+
+        r = sd_json_parse(json, SD_JSON_PARSE_MUST_BE_OBJECT, &v, /* reterr_line= */ NULL, /* reterr_column= */ NULL);
         if (r < 0)
                 return (void) crypt_log_debug_errno(cd, r, "Failed to parse " TOKEN_NAME " JSON object: %m");
 
@@ -275,7 +283,11 @@ _public_ int cryptsetup_token_validate(
 
         assert(json);
 
-        r = sd_json_parse(json, 0, &v, NULL, NULL);
+        r = DLOPEN_CRYPTSETUP(LOG_DEBUG, SD_ELF_NOTE_DLOPEN_PRIORITY_REQUIRED);
+        if (r < 0)
+                return r;
+
+        r = sd_json_parse(json, SD_JSON_PARSE_MUST_BE_OBJECT, &v, /* reterr_line= */ NULL, /* reterr_column= */ NULL);
         if (r < 0)
                 return crypt_log_debug_errno(cd, r, "Could not parse " TOKEN_NAME " json object: %m");
 

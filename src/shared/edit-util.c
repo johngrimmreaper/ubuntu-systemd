@@ -13,12 +13,12 @@
 #include "fileio.h"
 #include "fs-util.h"
 #include "log.h"
-#include "mkdir-label.h"
+#include "mkdir.h"
 #include "path-util.h"
 #include "process-util.h"
 #include "string-util.h"
 #include "strv.h"
-#include "tmpfile-util-label.h"
+#include "tmpfile-util.h"
 
 typedef struct EditFile {
         EditFileContext *context;
@@ -319,7 +319,10 @@ static int run_editor(const EditFileContext *context) {
 
         assert(context);
 
-        r = safe_fork("(editor)", FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM|FORK_RLIMIT_NOFILE_SAFE|FORK_CLOSE_ALL_FDS|FORK_REOPEN_LOG|FORK_LOG|FORK_WAIT, NULL);
+        r = pidref_safe_fork(
+                        "(editor)",
+                        FORK_RESET_SIGNALS|FORK_DEATHSIG_SIGTERM|FORK_RLIMIT_NOFILE_SAFE|FORK_CLOSE_ALL_FDS|FORK_REOPEN_LOG|FORK_LOG|FORK_WAIT,
+                        /* ret= */ NULL);
         if (r < 0)
                 return r;
         if (r == 0) { /* Child */

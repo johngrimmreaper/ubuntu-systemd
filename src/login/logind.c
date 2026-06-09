@@ -35,7 +35,7 @@
 #include "logind-utmp.h"
 #include "logind-varlink.h"
 #include "main-func.h"
-#include "mkdir-label.h"
+#include "mkdir.h"
 #include "parse-util.h"
 #include "process-util.h"
 #include "service-util.h"
@@ -1116,6 +1116,7 @@ static int manager_dispatch_idle_action(sd_event_source *s, uint64_t t, void *us
         Manager *m = ASSERT_PTR(userdata);
         struct dual_timestamp since;
         usec_t n, elapse;
+        bool idle;
         int r;
 
         if (m->idle_action == HANDLE_IGNORE ||
@@ -1124,8 +1125,8 @@ static int manager_dispatch_idle_action(sd_event_source *s, uint64_t t, void *us
 
         n = now(CLOCK_MONOTONIC);
 
-        r = manager_get_idle_hint(m, &since);
-        if (r <= 0) {
+        idle = manager_get_idle_hint(m, &since);
+        if (!idle) {
                 /* Not idle. Let's check if after a timeout it might be idle then. */
                 elapse = n + m->idle_action_usec;
                 m->was_idle = false;
@@ -1371,8 +1372,6 @@ static int run(int argc, char *argv[]) {
         (void) mkdir_label("/run/systemd/seats", 0755);
         (void) mkdir_label("/run/systemd/users", 0755);
         (void) mkdir_label("/run/systemd/sessions", 0755);
-
-        assert_se(sigprocmask_many(SIG_BLOCK, /* ret_old_mask= */ NULL, SIGCHLD) >= 0);
 
         r = manager_new(&m);
         if (r < 0)

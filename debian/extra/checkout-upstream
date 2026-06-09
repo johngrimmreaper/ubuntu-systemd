@@ -70,7 +70,7 @@ fi
 if [ -d .git ] && echo "$UPSTREAM_VER" | grep -q '\.'; then
     rm -rf .pc
     git reset --hard "origin/ci/v${UPSTREAM_VER%%.*}-stable"
-    apt build-dep --yes . || true
+    apt build-dep --yes . || sudo apt build-dep --yes . || true
 fi
 
 if [ -n "${KEEP_DEBIAN_PATCHES:-}" ]; then

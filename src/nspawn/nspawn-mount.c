@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include <linux/magic.h>
+#include <sched.h>
 #include <sys/mount.h>
 #include <unistd.h>
 
@@ -13,7 +14,7 @@
 #include "format-util.h"
 #include "fs-util.h"
 #include "log.h"
-#include "mkdir-label.h"
+#include "mkdir.h"
 #include "mount-util.h"
 #include "mountpoint-util.h"
 #include "namespace-util.h"
@@ -756,12 +757,13 @@ int mount_all(const char *dest,
 }
 
 static int parse_mount_bind_options(const char *options, unsigned long *open_tree_flags, char **mount_opts, RemountIdmapping *idmapping) {
-        unsigned long flags = *open_tree_flags;
+        unsigned long flags = *ASSERT_PTR(open_tree_flags);
         char *opts = NULL;
-        RemountIdmapping new_idmapping = *idmapping;
+        RemountIdmapping new_idmapping = *ASSERT_PTR(idmapping);
         int r;
 
         assert(options);
+        assert(mount_opts);
 
         for (;;) {
                 _cleanup_free_ char *word = NULL;
@@ -1493,7 +1495,7 @@ static int do_wipe_fully_visible_api_fs(void) {
 
 int wipe_fully_visible_api_fs(int mntns_fd) {
         _cleanup_close_ int orig_mntns_fd = -EBADF;
-        int r, rr;
+        int r;
 
         log_debug("Wiping fully visible API FS");
 
@@ -1501,23 +1503,13 @@ int wipe_fully_visible_api_fs(int mntns_fd) {
         if (orig_mntns_fd < 0)
                 return log_error_errno(orig_mntns_fd, "Failed to pin originating mount namespace: %m");
 
-        r = namespace_enter(/* pidns_fd= */ -EBADF,
-                            mntns_fd,
-                            /* netns_fd= */ -EBADF,
-                            /* userns_fd= */ -EBADF,
-                            /* root_fd= */ -EBADF);
-        if (r < 0)
-                return log_error_errno(r, "Failed to enter mount namespace: %m");
+        if (setns(mntns_fd, CLONE_NEWNS) < 0)
+                return log_error_errno(errno, "Failed to enter mount namespace: %m");
 
-        rr = do_wipe_fully_visible_api_fs();
+        r = do_wipe_fully_visible_api_fs();
 
-        r = namespace_enter(/* pidns_fd= */ -EBADF,
-                            orig_mntns_fd,
-                            /* netns_fd= */ -EBADF,
-                            /* userns_fd= */ -EBADF,
-                            /* root_fd= */ -EBADF);
-        if (r < 0)
-                return log_error_errno(r, "Failed to enter original mount namespace: %m");
+        if (setns(orig_mntns_fd, CLONE_NEWNS) < 0)
+                return log_error_errno(errno, "Failed to enter original mount namespace: %m");
 
-        return rr;
+        return r;
 }

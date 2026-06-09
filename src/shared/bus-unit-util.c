@@ -347,8 +347,6 @@ static int bus_append_parse_resource_limit(sd_bus_message *m, const char *field,
         if (isempty(eq) || streq(eq, "infinity")) {
                 uint64_t x = streq(eq, "infinity") ? CGROUP_LIMIT_MAX :
                         STR_IN_SET(field,
-                                   "DefaultMemoryLow",
-                                   "DefaultMemoryMin",
                                    "MemoryLow",
                                    "MemoryMin") ? CGROUP_LIMIT_MIN : CGROUP_LIMIT_MAX;
 
@@ -1168,6 +1166,58 @@ static int bus_append_import_credential(sd_bus_message *m, const char *field, co
                         r = sd_bus_message_close_container(m);
                 }
         }
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        return 1;
+}
+
+static int bus_append_refresh_on_reload(sd_bus_message *m, const char *field, const char *eq) {
+        int r;
+
+        assert(eq);
+
+        r = sd_bus_message_open_container(m, 'r', "sv");
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        r = sd_bus_message_append_basic(m, 's', field);
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        r = sd_bus_message_open_container(m, 'v', "a(bs)");
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        r = sd_bus_message_open_container(m, 'a', "(bs)");
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        bool invert = *eq == '~';
+
+        for (const char *p = eq + invert;;) {
+                _cleanup_free_ char *word = NULL;
+
+                r = extract_first_word(&p, &word, NULL, 0);
+                if (r < 0)
+                        return parse_log_error(r, field, eq);
+                if (r == 0)
+                        break;
+
+                r = sd_bus_message_append(m, "(bs)", invert, word);
+                if (r < 0)
+                        return bus_log_create_error(r);
+        }
+
+        r = sd_bus_message_close_container(m);
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        r = sd_bus_message_close_container(m);
+        if (r < 0)
+                return bus_log_create_error(r);
+
+        r = sd_bus_message_close_container(m);
         if (r < 0)
                 return bus_log_create_error(r);
 
@@ -2094,7 +2144,7 @@ static int bus_append_protect_hostname(sd_bus_message *m, const char *field, con
         int r;
 
         /* The command-line field is called "ProtectHostname". We also accept "ProtectHostnameEx" as the
-         * field name for backward compatibility. We set ProtectHostame or ProtectHostnameEx. */
+         * field name for backward compatibility. We set ProtectHostname or ProtectHostnameEx. */
 
         r = parse_boolean(eq);
         if (r >= 0)
@@ -2334,7 +2384,10 @@ static const BusProperty cgroup_properties[] = {
         { "ManagedOOMSwap",                        bus_append_string                             },
         { "ManagedOOMMemoryPressure",              bus_append_string                             },
         { "ManagedOOMPreference",                  bus_append_string                             },
+        { "OOMRules",                              bus_append_strv                               },
         { "MemoryPressureWatch",                   bus_append_string                             },
+        { "CPUPressureWatch",                      bus_append_string                             },
+        { "IOPressureWatch",                       bus_append_string                             },
         { "DelegateSubgroup",                      bus_append_string                             },
         { "ManagedOOMMemoryPressureLimit",         bus_append_parse_permyriad                    },
         { "MemoryAccounting",                      bus_append_parse_boolean                      },
@@ -2351,11 +2404,10 @@ static const BusProperty cgroup_properties[] = {
         { "StartupAllowedCPUs",                    bus_append_parse_cpu_set                      },
         { "AllowedMemoryNodes",                    bus_append_parse_cpu_set                      },
         { "StartupAllowedMemoryNodes",             bus_append_parse_cpu_set                      },
+        { "CPUSetPartition",                       bus_append_string                             },
         { "DisableControllers",                    bus_append_strv                               },
         { "Delegate",                              bus_append_parse_delegate                     },
         { "MemoryMin",                             bus_append_parse_resource_limit               },
-        { "DefaultMemoryLow",                      bus_append_parse_resource_limit               },
-        { "DefaultMemoryMin",                      bus_append_parse_resource_limit               },
         { "MemoryLow",                             bus_append_parse_resource_limit               },
         { "MemoryHigh",                            bus_append_parse_resource_limit               },
         { "MemoryMax",                             bus_append_parse_resource_limit               },
@@ -2375,7 +2427,10 @@ static const BusProperty cgroup_properties[] = {
         { "SocketBindAllow",                       bus_append_socket_filter                      },
         { "SocketBindDeny",                        bus_append_socket_filter                      },
         { "MemoryPressureThresholdSec",            bus_append_parse_sec_rename                   },
+        { "CPUPressureThresholdSec",               bus_append_parse_sec_rename                   },
+        { "IOPressureThresholdSec",                bus_append_parse_sec_rename                   },
         { "NFTSet",                                bus_append_nft_set                            },
+        { "BindNetworkInterface",                  bus_append_string                             },
 
         /* While infinity is disallowed in unit file, infinity is allowed in D-Bus API which
          * means use the default memory pressure duration from oomd.conf. */
@@ -2391,6 +2446,8 @@ static const BusProperty cgroup_properties[] = {
         { "BlockIOReadBandwidth",                  warn_deprecated                               },
         { "BlockIOWriteBandwidth",                 warn_deprecated                               },
         { "CPUAccounting",                         warn_deprecated                               },
+        { "DefaultMemoryMin",                      warn_deprecated                               },
+        { "DefaultMemoryLow",                      warn_deprecated                               },
 
         { NULL, bus_try_append_parse_cgroup_io_limit, cgroup_io_limits_list                      },
         {}
@@ -2419,6 +2476,7 @@ static const BusProperty execute_properties[] = {
         { "SELinuxContext",                        bus_append_string                             },
         { "RootImage",                             bus_append_string                             },
         { "RootVerity",                            bus_append_string                             },
+        { "RootMStack",                            bus_append_string                             },
         { "RuntimeDirectoryPreserve",              bus_append_string                             },
         { "Personality",                           bus_append_string                             },
         { "KeyringMode",                           bus_append_string                             },
@@ -2460,6 +2518,7 @@ static const BusProperty execute_properties[] = {
         { "CPUSchedulingResetOnFork",              bus_append_parse_boolean                      },
         { "LockPersonality",                       bus_append_parse_boolean                      },
         { "MemoryKSM",                             bus_append_parse_boolean                      },
+        { "MemoryTHP",                             bus_append_string                             },
         { "RestrictSUIDSGID",                      bus_append_parse_boolean                      },
         { "RootEphemeral",                         bus_append_parse_boolean                      },
         { "SetLoginEnvironment",                   bus_append_parse_boolean                      },
@@ -2665,6 +2724,7 @@ static const BusProperty service_properties[] = {
         { "SuccessExitStatus",                     bus_append_exit_status                        },
         { "OpenFile",                              bus_append_open_file                          },
         { "ReloadSignal",                          bus_append_signal_from_string                 },
+        { "RefreshOnReload",                       bus_append_refresh_on_reload                  },
         {}
 };
 

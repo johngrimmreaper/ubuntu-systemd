@@ -94,6 +94,28 @@ SPDX-License-Identifier: LGPL-2.1-or-later
   }
   ```
 
+- Braces in `if` blocks are not required to be symmetric. Write this:
+
+  ```c
+  if (foobar)
+          waldo();
+  else {
+          foo();
+          bar();
+  }
+  ```
+
+  instead of this:
+
+  ```c
+  if (foobar) {
+          waldo();
+  } else {
+          foo();
+          bar();
+  }
+  ```
+
 - Do not write `foo ()`, write `foo()`.
 
 - `else` blocks should generally start on the same line as the closing `}`:
@@ -366,10 +388,10 @@ SPDX-License-Identifier: LGPL-2.1-or-later
   - `src/shared`: `shared-forward.h`
 
   Header files that extend other header files can include the original header
-  file. For example, `iovec-util.h` includes `iovec-fundamental.h` and
-  `sys/uio.h`. To identify headers that are exported from other headers, add a
-  `IWYU pragma: export` comment to the includes so that these exports are
-  recognized by clang static analysis tooling.
+  file. For example, `iovec-util.h` includes `sys/uio.h`. To identify headers
+  that are exported from other headers, add a `IWYU pragma: export` comment
+  to the includes so that these exports are recognized by clang static analysis
+  tooling.
 
   Bad:
 
@@ -436,6 +458,16 @@ SPDX-License-Identifier: LGPL-2.1-or-later
   and Linux/GNU-specific APIs, we generally prefer the POSIX APIs. If there
   aren't, we are happy to use GNU or Linux APIs, and expect non-GNU
   implementations of libc to catch up with glibc.
+
+- Very often we pass a pair of file descriptor and a path to functions, which
+  are to be understood in combination. For example `openat()` style functions
+  typically take a directory fd and a filename relative to that as argument. In
+  other cases where operations operate relative to a root directory it makes
+  sense to have a pair of root path and root fd. Whenever possible the function
+  arguments should be in the order "fd first, path second" when the path shall
+  be understood relative to the fd. And an order "path first, fd second"
+  shall be used when the root path is the path of the referenced fd, i.e. two
+  references to the same object.
 
 ## Using C Constructs
 
@@ -695,7 +727,7 @@ SPDX-License-Identifier: LGPL-2.1-or-later
 - Think about the log level you choose: for functions that are of the "logging"
   kind (see above), please ensure that failures we propagate should be logged
   about at `LOG_ERR` level. Failures that are noteworthy, but we proceed anyway,
-  should be loged at `LOG_WARN` level. Important informational messages should
+  should be logged at `LOG_WARN` level. Important informational messages should
   use `LOG_NOTICE` and regular informational messages should use
   `LOG_INFO`. Note that the latter is the default maximum log level, i.e. only
   `LOG_DEBUG` messages are hidden by default.
@@ -744,9 +776,9 @@ SPDX-License-Identifier: LGPL-2.1-or-later
   section of the `alloca(3)` man page.
 
 - If you want to concatenate two or more strings, consider using `strjoina()`
-  or `strjoin()` rather than `asprintf()`, as the latter is a lot slower. This
-  matters particularly in inner loops (but note that `strjoina()` cannot be
-  used there).
+  or `strjoin()` rather than `asprintf()` or `asprintf_safe`, as the latter is
+  a lot slower. This matters particularly in inner loops (but note that
+  `strjoina()` cannot be used there).
 
 ## Runtime Behaviour
 

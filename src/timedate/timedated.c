@@ -184,7 +184,9 @@ static int context_parse_ntp_services_from_disk(Context *c) {
         _cleanup_strv_free_ char **files = NULL;
         int r;
 
-        r = conf_files_list_strv(&files, ".list", NULL, CONF_FILES_FILTER_MASKED, UNIT_LIST_DIRS);
+        r = conf_files_list_strv(&files, ".list", /* root= */ NULL,
+                                 CONF_FILES_FILTER_MASKED | CONF_FILES_WARN,
+                                 UNIT_LIST_DIRS);
         if (r < 0)
                 return log_error_errno(r, "Failed to enumerate .list files: %m");
 
@@ -1107,7 +1109,7 @@ static const sd_bus_vtable timedate_vtable[] = {
         SD_BUS_VTABLE_END,
 };
 
-const BusObjectImplementation manager_object = {
+static const BusObjectImplementation manager_object = {
         "/org/freedesktop/timedate1",
         "org.freedesktop.timedate1",
         .vtables = BUS_VTABLES(timedate_vtable),

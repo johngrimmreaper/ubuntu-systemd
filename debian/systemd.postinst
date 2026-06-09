@@ -58,9 +58,14 @@ fi
 
 # Enable getty, remote-fs.target and systemd-pstore by default on new installs
 if [ -z "$2" ]; then
-    systemctl ${DPKG_ROOT:+--root="$DPKG_ROOT"} enable getty@tty1.service || true
     systemctl ${DPKG_ROOT:+--root="$DPKG_ROOT"} enable remote-fs.target || true
     systemctl ${DPKG_ROOT:+--root="$DPKG_ROOT"} enable systemd-pstore.service || true
+fi
+
+# This is no longer statically enabled since v260
+# Enable autovt@.service and getty@tty1 on upgrades and new installs
+if dpkg --compare-versions "$2" lt "260~rc4-2~"; then
+    systemctl ${DPKG_ROOT:+--root="$DPKG_ROOT"} enable getty@.service || true
 fi
 
 # Create /etc/machine-id
@@ -70,9 +75,6 @@ systemd-machine-id-setup ${DPKG_ROOT:+--root="$DPKG_ROOT"}
 if [ -z "$2" ]; then
     mkdir -p "$DPKG_ROOT/var/log/journal"
 fi
-
-# Initial update of the Message Catalogs database
-_update_catalog
 
 # Process all tmpfiles that we ship, including any overrides in
 # runtime-dir/sysadmin-dir/other packages (e.g. rsyslog)
@@ -84,5 +86,8 @@ systemd-tmpfiles --create || :
 if [ -n "$2" ] && [ "$(systemctl is-system-running)" != "stopping" ]; then
     _restart_managers
 fi
+
+# Initial update of the Message Catalogs database
+_update_catalog
 
 #DEBHELPER#
