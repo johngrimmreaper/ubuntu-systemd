@@ -11,7 +11,6 @@ Restrictions: needs-root, allow-stderr, isolation-container, skippable
 
 Tests: unit-config
 Depends: systemd,
-  udev,
   systemd-dev,
   libpam-systemd,
   libnss-systemd,
@@ -24,7 +23,6 @@ Restrictions: needs-root, allow-stderr
 
 Tests: storage
 Depends: systemd,
-  udev,
   systemd-cryptsetup,
   libpam-systemd,
   libnss-systemd,
@@ -39,7 +37,6 @@ Restrictions: needs-root, isolation-machine
 Tests: networkd-test.py
 Tests-Directory: test
 Depends: systemd,
-  udev,
   systemd-resolved,
   systemd-cryptsetup,
   libpam-systemd,
@@ -58,7 +55,6 @@ Restrictions: needs-root, isolation-container, breaks-testbed, skip-not-installa
 
 Tests: build-login
 Depends: systemd,
-  udev,
   systemd-cryptsetup,
   libpam-systemd,
   libnss-systemd,
@@ -77,8 +73,6 @@ Restrictions: isolation-container
 
 Tests: boot-and-services
 Depends: systemd-sysv,
-  systemd,
-  udev,
   systemd-container,
   systemd-coredump,
   systemd-dev,
