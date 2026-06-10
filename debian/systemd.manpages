@@ -277,8 +277,8 @@ debian/tmp/usr/share/man/man8/systemd-tmpfiles-setup.service.8
 [amd64 i386 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-setup.8
 [amd64 i386 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-setup-early.service.8
 [amd64 i386 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-setup.service.8
-[amd64 i386 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-swtpm.8
-[amd64 i386 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-swtpm.service.8
+[amd64 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-swtpm.8
+[amd64 arm64 armhf riscv64 loong64] <!stage1> debian/tmp/usr/share/man/man8/systemd-tpm2-swtpm.service.8
 debian/tmp/usr/share/man/man8/systemd-udev-settle.service.8
 debian/tmp/usr/share/man/man8/systemd-update-done.8
 debian/tmp/usr/share/man/man8/systemd-update-done.service.8
