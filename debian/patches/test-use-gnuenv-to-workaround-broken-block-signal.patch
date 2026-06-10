@@ -3,7 +3,8 @@ Date: Fri, 27 Feb 2026 14:17:22 -0500
 Subject: test: use gnuenv to workaround broken --block-signal=
 
 Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/2142900
-Forwarded: no
+Bug: https://github.com/uutils/coreutils/issues/11151
+Forwarded: https://github.com/uutils/coreutils/pull/12149
 
 The uutils coreutils env does not understand SIGRTMIN+N (or SIGRTMIN at
 all).
