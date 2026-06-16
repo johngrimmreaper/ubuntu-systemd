@@ -1195,6 +1195,8 @@ int unit_merge(Unit *u, Unit *other) {
         if (r < 0)
                 return r;
 
+        UnitLoadState saved_load_state = other->load_state;
+
         other->load_state = UNIT_MERGED;
         other->merged_into = u;
 
@@ -1203,7 +1205,7 @@ int unit_merge(Unit *u, Unit *other) {
 
         /* If there is still some data attached to the other node, we
          * don't need it anymore, and can free it. */
-        if (other->load_state != UNIT_STUB)
+        if (saved_load_state != UNIT_STUB)
                 if (UNIT_VTABLE(other)->done)
                         UNIT_VTABLE(other)->done(other);
 
@@ -4158,7 +4160,7 @@ int unit_kill(
                         }
 
                         if (signo == SIGKILL) {
-                                r = cg_kill_kernel_sigkill(p);
+                                r = cg_kill_kernel_sigkill(p, /* ret_n_pids_killed= */ NULL);
                                 if (r >= 0) {
                                         killed = true;
                                         log_unit_info(u, "Killed unit cgroup '%s' with SIGKILL on client request.", p);
@@ -4345,10 +4347,13 @@ static int unit_verify_contexts(const Unit *u) {
                 return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PrivatePIDs= setting is only supported for service units. Refusing.");
 
         if ((ec->user || ec->dynamic_user || ec->group || ec->pam_name) && ec->private_users == PRIVATE_USERS_MANAGED)
-                return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PrivateUsers=managed may not be used in combination with User=/DynamicUser=/Group=/PAMName=, refusing.");
+                return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PrivateUsers=managed may not be used in combination with User=/DynamicUser=/Group=/PAMName=. Refusing.");
 
         if (ec->user_namespace_path && ec->private_users != PRIVATE_USERS_NO)
-                return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PrivateUsers= may not be used with custom UserNamespacePath=, refusing.");
+                return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PrivateUsers= may not be used with custom UserNamespacePath=. Refusing.");
+
+        if (ec->private_pids != PRIVATE_PIDS_NO && ec->pam_name)
+                return log_unit_error_errno(u, SYNTHETIC_ERRNO(ENOEXEC), "PAM is not supported under PrivatePIDs=. Refusing.");
 
         const KillContext *kc = unit_get_kill_context(u);
 
