@@ -1,3 +1,11 @@
+systemd (259.5-0ubuntu3.2) resolute; urgency=medium
+
+  * test: use gnudate in TEST-45-TIMEDATE (LP: #2157342)
+  * d/t/upstream: skip TEST-70-TPM2 and TEST-86-MULTI-PROFILE-UKI due to timeouts
+    (LP: #2157344)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Thu, 18 Jun 2026 10:27:05 -0400
+
 systemd (259.5-0ubuntu3.1) resolute; urgency=medium
 
   * Fix cloud-init delay caused by systemd-networkd resolve hook (LP: #2148619)
