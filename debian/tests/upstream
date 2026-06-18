@@ -168,7 +168,8 @@ export NO_BUILD=1
 export NO_SYNC=1
 
 if dpkg-vendor --is Ubuntu; then
-    export TEST_SKIP="TEST-08-INITRD" # LP: #2136419
+     # LP: #2136419, LP: #2157344
+    export TEST_SKIP="TEST-08-INITRD TEST-70-TPM2 TEST-86-MULTI-PROFILE-UKI"
 fi
 
 mkosi --debug genkey
