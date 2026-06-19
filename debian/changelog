@@ -1,3 +1,18 @@
+systemd (261-1) unstable; urgency=medium
+
+  [ Nick Rosbrook ]
+  * d/control: do not build systemd-boot-efi-*-signed-template on ubuntu
+  * lintian-overrides: override error about derivative.ubuntu build
+    profile
+
+  [ Luca Boccassi ]
+  * Update upstream source from tag 'upstream/261' Update to upstream
+    version '261' with Debian dir ae08f24a821ff100eddf715f70140ae1f18bf647
+    For more information, see:
+    https://github.com/systemd/systemd/releases/tag/v261
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 19 Jun 2026 19:29:58 +0100
+
 systemd (261~rc4-1ubuntu1) stonking; urgency=medium
 
   * Merge with Debian unstable (LP: #2153359). Remaining changes:

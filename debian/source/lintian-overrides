@@ -11,3 +11,6 @@ systemd source: binaries-have-file-conflict systemd systemd-standalone-sysusers 
 systemd source: binaries-have-file-conflict systemd systemd-standalone-tmpfiles *
 # Go home Lintian, you are drunk
 systemd source: source-contains-prebuilt-windows-binary [test/fuzz/*]
+# derivative.ubuntu is a valid build profile name
+systemd source: invalid-profile-name-in-build-profiles-field derivative.ubuntu (in section for systemd-boot-efi-amd64-signed-template) [*]
+systemd source: invalid-profile-name-in-build-profiles-field derivative.ubuntu (in section for systemd-boot-efi-arm64-signed-template) [*]
