@@ -713,7 +713,7 @@ Description: Provides cryptsetup, integritysetup and veritysetup utilities
 
 Package: systemd-imds
 Build-Profiles: <!stage1>
-Architecture: linux-any
+Architecture: amd64 arm64 armhf s390x ppc64el riscv64
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          ${dlopen:Depends},
@@ -727,7 +727,7 @@ Description: Provides imds utilities and units
 
 Package: systemd-report
 Build-Profiles: <!stage1>
-Architecture: linux-any
+Architecture: amd64 arm64 armhf s390x ppc64el riscv64
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          ${dlopen:Depends},
@@ -741,7 +741,7 @@ Description: Provides metrics reporting utilities and units
 
 Package: systemd-tpm
 Build-Profiles: <!stage1>
-Architecture: linux-any
+Architecture: amd64 arm64 armhf s390x ppc64el riscv64
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          ${dlopen:Depends},
