@@ -99,8 +99,10 @@ Recommends: default-dbus-system-bus | dbus-system-bus,
             ${dlopen:Recommends},
 Suggests: systemd-container,
           systemd-homed,
+          systemd-imds,
           systemd-userdbd,
           systemd-boot,
+          systemd-report,
           systemd-repart,
           polkitd,
           ${dlopen:Suggests},
@@ -110,6 +112,7 @@ Depends: ${shlibs:Depends},
          ${misc:Depends},
          ${dlopen:Depends},
          libsystemd0 (= ${binary:Version}),
+         systemd-tpm,
          mount,
 Conflicts: consolekit,
            libpam-ck-connector,
@@ -645,6 +648,8 @@ Depends: ${shlibs:Depends},
          default-dbus-system-bus | dbus-system-bus
 Recommends: ${dlopen:Recommends},
 Suggests: polkitd,
+          libnss-myhostname,
+          libnss-resolve,
           ${dlopen:Suggests},
 Provides: resolvconf
 Conflicts: resolvconf,
@@ -705,3 +710,45 @@ Conflicts: systemd (<< 256-2~),
 Description: Provides cryptsetup, integritysetup and veritysetup utilities
  Utilities and units that integrated cryptsetup/integritysetup/veritysetup
  support in systemd.
+
+Package: systemd-imds
+Build-Profiles: <!stage1>
+Architecture: linux-any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         ${dlopen:Depends},
+Recommends: ${dlopen:Recommends},
+Suggests: ${dlopen:Suggests},
+Breaks: systemd (<< 261-2~),
+Replaces: systemd (<< 261-2~),
+Description: Provides imds utilities and units
+ Utilities and units that provide imds functionality and support in systemd,
+ including boot services and generators.
+
+Package: systemd-report
+Build-Profiles: <!stage1>
+Architecture: linux-any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         ${dlopen:Depends},
+Recommends: ${dlopen:Recommends},
+Suggests: ${dlopen:Suggests},
+Breaks: systemd (<< 261-2~),
+Replaces: systemd (<< 261-2~),
+Description: Provides metrics reporting utilities and units
+ Utilities and units that provide metrics reporting functionality and support
+ in systemd, including boot services and generators.
+
+Package: systemd-tpm
+Build-Profiles: <!stage1>
+Architecture: linux-any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         ${dlopen:Depends},
+Recommends: ${dlopen:Recommends},
+Suggests: ${dlopen:Suggests},
+Breaks: systemd (<< 261-2~),
+Replaces: systemd (<< 261-2~),
+Description: Provides tpm2 utilities and units
+ Utilities and units that provide tpm2 functionality and support in systemd,
+ including boot services and generators.

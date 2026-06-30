@@ -9,5 +9,7 @@ usr/lib/systemd/system/systemd-bootctl@.service
 usr/lib/systemd/system/systemd-boot-clear-sysfail.service
 usr/lib/systemd/system/systemd-boot-random-seed.service
 usr/lib/systemd/system/systemd-boot-update.service
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-notify-bootctl.socket
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-notify-bootctl@.service
 ../extra/initramfs etc/
 ../extra/kernel usr/share/

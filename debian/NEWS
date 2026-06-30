@@ -1,3 +1,20 @@
+systemd (261-2) unstable; urgency=medium
+
+  - Three new packages have been split out of the main systemd binary
+    package, in order to reduce the default dependencies footprint:
+
+    - systemd-tpm
+    - systemd-imds
+    - systemd-report
+
+    It is advised to take special care regarding the first one, as it
+    will be necessary to pull it in for initrd builds for the TPM2
+    integration. A temporary dependency systemd -> systemd-tpm was
+    added to facilitate migration, but it will be downgraded in the near
+    future to Recommends.
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 24 Jun 2026 22:15:24 +0100
+
 systemd (258~rc1-1) experimental; urgency=medium
 
   - Support for legacy cgroupv1 has been completely removed. Any

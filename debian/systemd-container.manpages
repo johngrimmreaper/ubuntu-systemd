@@ -37,6 +37,8 @@ debian/tmp/usr/share/man/man8/systemd-storage-fs@.service.8
 debian/tmp/usr/share/man/man8/systemd-sysupdate.8
 debian/tmp/usr/share/man/man8/systemd-sysupdate-reboot.service.8
 debian/tmp/usr/share/man/man8/systemd-sysupdate-reboot.timer.8
+<pkg.systemd.upstream> debian/tmp/usr/share/man/man8/systemd-sysupdate-update.service.8
+<pkg.systemd.upstream> debian/tmp/usr/share/man/man8/systemd-sysupdate-update.timer.8
 debian/tmp/usr/share/man/man8/systemd-sysupdate.service.8
 debian/tmp/usr/share/man/man8/systemd-sysupdate.timer.8
 <pkg.systemd.upstream> debian/tmp/usr/share/man/man8/systemd-sysupdated.8

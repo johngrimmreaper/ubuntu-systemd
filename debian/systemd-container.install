@@ -26,6 +26,7 @@ usr/lib/systemd/systemd-sysupdate*
 usr/lib/systemd/system-generators/systemd-import-generator
 usr/lib/systemd/system/sockets.target.wants/systemd-import*
 usr/lib/systemd/system/sockets.target.wants/systemd-storage-*.socket
+<pkg.systemd.upstream> usr/lib/systemd/system/sockets.target.wants/systemd-sysupdate.socket
 usr/lib/systemd/system/systemd-nspawn@.service
 usr/lib/systemd/system/systemd-import*
 usr/lib/systemd/system/systemd-machined*
@@ -33,7 +34,15 @@ usr/lib/systemd/system/systemd-mountfsd*
 usr/lib/systemd/system/systemd-nsresourced*
 usr/lib/systemd/system/systemd-portabled.service
 usr/lib/systemd/system/systemd-storage-*
-usr/lib/systemd/system/systemd-sysupdate*
+usr/lib/systemd/system/systemd-sysupdate-reboot.service
+usr/lib/systemd/system/systemd-sysupdate-reboot.timer
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-update.service
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-update.timer
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate@.service
+usr/lib/systemd/system/systemd-sysupdate.service
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate.socket
+usr/lib/systemd/system/systemd-sysupdate.timer
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdated.service
 usr/lib/systemd/system/var-lib-machines.mount
 usr/lib/systemd/system/machines.target
 usr/lib/systemd/system/*.target.wants/systemd-machined*

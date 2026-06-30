@@ -1,3 +1,43 @@
+systemd (261.1-2) unstable; urgency=medium
+
+  * Make systemd actually temporarily depend on systemd-tpm. This was
+    mentioned in NEWS but forgotten, add it for a while to ease transition
+  * d/t/control: pull new packages in upstream test suite
+  * d/t/control: pull in cpio for upstream suite. Needed by mkosi
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 27 Jun 2026 19:50:09 +0100
+
+systemd (261.1-1) unstable; urgency=medium
+
+  [ Nick Rosbrook ]
+  * d/control: demote libnss-{myhostname,resolve} to Suggests for systemd-
+    resolved
+
+  [ Luca Boccassi ]
+  * Update upstream source from tag 'upstream/261.1' Update to upstream
+    version '261.1' with Debian dir
+    7b147cc676313eab49521f545f0f752c15704667
+  * Override new Lintian false positive
+  * d/copyright: update to add new licenses
+
+ -- Luca Boccassi <bluca@debian.org>  Fri, 26 Jun 2026 21:23:40 +0100
+
+systemd (261-2) unstable; urgency=medium
+
+  * d/t/control: do not install xserver-xorg-video-dummy on loong64
+  * Split imds tools into new systemd-imds package. These depend on curl
+    and provide advanced functionality, so split into a new package to
+    make the main package lighter
+  * Split metrics reporting tools into new systemd-report package. These
+    depend on curl and provide advanced functionality, so split into a new
+    package to make the main package lighter
+  * Split tpm tools into new systemd-tpm package. These depend on
+    libcrypto and tpm2-tss libraries and provide advanced functionality,
+    so splilt into a new package to make the main package lighter
+  * Note new package split in NEWS
+
+ -- Luca Boccassi <bluca@debian.org>  Wed, 24 Jun 2026 22:15:24 +0100
+
 systemd (261-1ubuntu1) stonking; urgency=medium
 
   * Merge with Debian unstable (LP: #2153359). Remaining changes:
