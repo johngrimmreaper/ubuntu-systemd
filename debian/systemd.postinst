@@ -76,12 +76,6 @@ if [ -z "$2" ]; then
     mkdir -p "$DPKG_ROOT/var/log/journal"
 fi
 
-# Process all tmpfiles that we ship, including any overrides in
-# runtime-dir/sysadmin-dir/other packages (e.g. rsyslog)
-#
-# Ignore if this fails, because e.g. %b will fail on WSL
-systemd-tmpfiles --create || :
-
 # skip daemon-reexec and try-restarts during shutdown to avoid hitting LP: #1803391
 if [ -n "$2" ] && [ "$(systemctl is-system-running)" != "stopping" ]; then
     _restart_managers
@@ -91,3 +85,13 @@ fi
 _update_catalog
 
 #DEBHELPER#
+
+# Process all tmpfiles that we ship, including any overrides in
+# runtime-dir/sysadmin-dir/other packages (e.g. rsyslog)
+#
+# Ignore if this fails, because e.g. %b will fail on WSL
+#
+# NOTE: This must come after the debhelper generated code, because
+# dh_installtmpfiles will generated systemd-tmpfiles --create only
+# for systemd's tmpfiles, in which case var.conf wins over 00rsyslog.conf.
+systemd-tmpfiles --create || :
