@@ -1,3 +1,46 @@
+systemd (261.1-2ubuntu1) stonking; urgency=medium
+
+  * Merge with Debian unstable (LP: #2153359). Remaining changes:
+    - debian/systemd.postinst:
+      + manually call systemd-tmpfiles --create in postinst
+    - debian/control:
+      + Add Recommends: systemd-resolved to systemd package
+      + Make systemd-cryptsetup Priority: important
+      + Give systemd-resolved Priority: important
+      + Add Recommends: systemd-hwe-hwdb to udev package
+      + d/control: demote systemd-userdbd to Suggests for libnss-systemd
+    - d/rules: disable bpf support on riscv64 for now (LP #2099864)
+    - d/extra/dbus-1: remove SetLocale restriction from dbus policy (LP #2102028)
+    - Delta for i386:
+      + debian/systemd.install: exclude files that are not built for i386
+      + debian/systemd.manpages: do not ship un-built manpages on i386
+      + debian/rules,debian/control:
+        Do not build with tpm libraries or libqrencode on i386
+      + debian/rules: Remove unneeded efi artifacts on i386 to avoid debugedit errors
+    - debian/libnss-systemd.nss:
+      + Install systemd service after files.
+        As suggested by upstream the systemd NSS service should come just after
+        files
+      - Install after 'compat' too (LP #2125403)
+    - debian/tests:
+      + Drop needs-internet restriction and fix test failures masked by this (LP #2148202)
+      + d/t/upstream: use mkosi from the archive to drop needs-internet
+      + d/t/control: add Depends: libcrypt-dev for upstream test
+    - debian/patches:
+      + switch-root: use MS_MOVE for /run when switchig from initrd
+      + test: use gnuenv to workaround broken --block-signal= (LP #2142900)
+  * Dropped changes, fixed in Debian:
+    - debian/control: Drop Recommends: libnss-myhostname libnss-resolve from systemd-resolved
+  * New changes:
+    - d/control: do not build systemd-{tpm,report,imds} on i386
+    - d/systemd.postinst: fix triggering of all tmpfiles.
+      The intent in systemd.postinst is to trigger _all_ tmpfiles, not just
+      those owned by systemd. Move the call after #DEBHELPER# to fix this.
+      (LP: #2158686)
+    - test: reduce number of disks in TEST-64-UDEV-STORAGE-simultaneous_events on Debian/Ubuntu
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Wed, 01 Jul 2026 09:07:58 -0400
+
 systemd (261.1-2) unstable; urgency=medium
 
   * Make systemd actually temporarily depend on systemd-tpm. This was
