@@ -138,6 +138,19 @@ if dpkg-vendor --is Ubuntu && [ "${TEST_UPSTREAM:-0}" -ne 1 ]; then
     done
 
     mkosi_version="$(dpkg --status mkosi | awk '/^Version:/{print $NF}')"
+
+    # These never complete on Ubuntu autopkgtest infra. See:
+    # LP: #2157344
+    # https://github.com/systemd/systemd/issues/42606
+    # https://github.com/systemd/systemd/issues/42604
+    skip="TEST-70-TPM2 TEST-86-MULTI-PROFILE-UKI"
+
+    if systemd-analyze compare-versions "$mkosi_version" lt 27; then
+        # These require a new release of mkosi, which is not available yet.
+        skip="$skip TEST-08-INITRD TEST-91-LIVEUPDATE TEST-24-CRYPTSETUP"
+    fi
+
+    export TEST_SKIP="$skip"
 else
     # Use mkosi from git
     mkosi_tree="${AUTOPKGTEST_TMP}/mkosi"
