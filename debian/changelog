@@ -1,3 +1,11 @@
+systemd (261.1-2ubuntu2) stonking; urgency=medium
+
+  * d/t/upstream: skip remaining problematic tests
+  * mkosi: pull new split-out packages for deb/ubuntu
+  * d/control: do not Depends: systemd-tpm on i386
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Tue, 07 Jul 2026 16:10:34 -0400
+
 systemd (261.1-2ubuntu1) stonking; urgency=medium
 
   * Merge with Debian unstable (LP: #2153359). Remaining changes:
