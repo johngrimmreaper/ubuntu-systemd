@@ -1,3 +1,12 @@
+systemd (259.5-0ubuntu3.3) resolute; urgency=medium
+
+  * d/systemd.postinst: move systemd-tmpfiles --create after debhelper.
+    Otherwise, the debhelper-generated systemd-tmpfiles call will include
+    var.conf, but not rsyslog's 00rsyslog.conf, and breaks rsyslog when
+    the systemd package is upgraded. (LP: #2158686)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Wed, 22 Jul 2026 13:07:19 -0400
+
 systemd (259.5-0ubuntu3.2) resolute; urgency=medium
 
   * test: use gnudate in TEST-45-TIMEDATE (LP: #2157342)
