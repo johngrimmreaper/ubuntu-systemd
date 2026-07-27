@@ -70,3 +70,5 @@ lp2134334/0003-udev-rules.d-import-hwdb-before-calling-net_id-builtin.patch
 lp2141296-timer-don-t-run-service-immediately-after-restart-of-timer.patch
 CVE-2026-40226-1.patch
 CVE-2026-40226-2.patch
+CVE-2026-16742/homed-fix-verification-of-local-identity-file.patch
+CVE-2026-16742/homed-verify-privileged-worker-changes.patch
