@@ -370,7 +370,7 @@ label-id: 1D2CE291-7CCE-4F7D-BC83-FDB49AD74EBD
 device: $imgs/zzz
 unit: sectors
 first-lba: 2048
-last-lba: 6422494
+last-lba: 6422487
 $imgs/zzz1 : start=        2048, size=      591856, type=933AC7E1-2EB4-4F13-B844-0E14E2AEF915, uuid=4980595D-D74A-483A-AA9E-9903879A0EE5, name=\"home-first\", attrs=\"GUID:59\"
 $imgs/zzz2 : start=      593904, size=      591856, type=${root_guid}, uuid=${root_uuid}, name=\"root-${architecture}\", attrs=\"GUID:59\"
 $imgs/zzz3 : start=     1185760, size=      591864, type=${root_guid}, uuid=${root_uuid2}, name=\"root-${architecture}-2\", attrs=\"GUID:59\"
@@ -434,7 +434,7 @@ label-id: 1D2CE291-7CCE-4F7D-BC83-FDB49AD74EBD
 device: $imgs/zzz
 unit: sectors
 first-lba: 2048
-last-lba: 6553566
+last-lba: 6553559
 $imgs/zzz1 : start=        2048, size=      591856, type=933AC7E1-2EB4-4F13-B844-0E14E2AEF915, uuid=4980595D-D74A-483A-AA9E-9903879A0EE5, name=\"home-first\", attrs=\"GUID:59\"
 $imgs/zzz2 : start=      593904, size=      591856, type=${root_guid}, uuid=${root_uuid}, name=\"root-${architecture}\", attrs=\"GUID:59\"
 $imgs/zzz3 : start=     1185760, size=      591864, type=${root_guid}, uuid=${root_uuid2}, name=\"root-${architecture}-2\", attrs=\"GUID:59\"
@@ -449,6 +449,168 @@ $imgs/zzz8 : start=     6422488, size=      131072, type=4D21B016-B534-45C2-A9FB
 
     cryptsetup luksDump "${loop}p8" | grep 'Flags:[[:space:]]*(no flags)' >/dev/null
     losetup -d "$loop"
+}
+
+testcase_copy_from_grain_padding() {
+    local defs imgs output
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    imgs="$(mktemp --directory "/var/tmp/test-repart.imgs.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$imgs'" RETURN
+    chmod 0755 "$defs"
+
+    truncate -s 80MiB "$imgs/copy_from"
+    sfdisk "$imgs/copy_from" <<EOF
+label: gpt
+grain: 4194304
+
+size=40961, type=${root_guid}, uuid=837c3d67-21b3-478e-be82-7e7f83bf96d3
+size=10240, type=${xbootldr_guid}, uuid=4985c03e-eecb-4fe0-9f65-3f6345782214
+EOF
+
+    output=$(sfdisk --dump "$imgs/copy_from")
+
+    # Padding between partition 1 and 2 is 8191 sectors
+    assert_in "$imgs/copy_from1 : start=        8192, size=       40961, type=${root_guid}," "$output"
+    assert_in "$imgs/copy_from2 : start=       57344, size=       10240, type=${xbootldr_guid}," "$output"
+
+    truncate -s 100MiB "$imgs/copy_to"
+    output=$(systemd-repart --offline="$OFFLINE" \
+                            --empty=allow \
+                            --definitions="$defs" \
+                            --seed="$seed" \
+                            --dry-run=no \
+                            --json=pretty \
+                            --copy-from="$imgs/copy_from" \
+                            --grain-size=512 \
+                            "$imgs/copy_to")
+
+    output=$(sfdisk --dump "$imgs/copy_to")
+
+    assert_in "$imgs/copy_to1 : start=        2048, size=       40961, type=${root_guid}," "$output"
+    # We set new grain-size to 1 sector, so padding now should be 8191 sectors again
+    assert_in "$imgs/copy_to2 : start=       51200, size=       10240, type=${xbootldr_guid}," "$output"
+}
+
+testcase_copy_from_respects_new_grain() {
+    local defs imgs output
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    imgs="$(mktemp --directory "/var/tmp/test-repart.imgs.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$imgs'" RETURN
+    chmod 0755 "$defs"
+
+    truncate -s 80MiB "$imgs/copy_from"
+    sfdisk "$imgs/copy_from" <<EOF
+label: gpt
+
+size=20480, type=${root_guid}, uuid=837c3d67-21b3-478e-be82-7e7f83bf96d3
+size=10240, type=${xbootldr_guid}, uuid=4985c03e-eecb-4fe0-9f65-3f6345782214
+EOF
+
+    truncate -s 100MiB "$imgs/copy_to"
+    output=$(systemd-repart --offline="$OFFLINE" \
+                            --empty=allow \
+                            --definitions="$defs" \
+                            --seed="$seed" \
+                            --dry-run=no \
+                            --json=pretty \
+                            --copy-from="$imgs/copy_from" \
+                            --grain-size=4194304 \
+                            "$imgs/copy_to")
+
+    output=$(sfdisk --dump "$imgs/copy_to")
+
+    assert_in "$imgs/copy_to1 : start=        8192, size=       24576, type=${root_guid}," "$output"
+    assert_in "$imgs/copy_to2 : start=       32768, size=       16384, type=${xbootldr_guid}," "$output"
+}
+
+testcase_copy_from_no_padding_at_beginning_and_end() {
+    local defs imgs output
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    imgs="$(mktemp --directory "/var/tmp/test-repart.imgs.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$imgs'" RETURN
+    chmod 0755 "$defs"
+
+    tee "$defs/03-esp.conf" <<EOF
+[Partition]
+Type=esp
+EOF
+
+    truncate -s 80MiB "$imgs/copy_from"
+    sfdisk "$imgs/copy_from" <<EOF
+label: gpt
+
+start=2280, size=20480, type=${root_guid}, uuid=837c3d67-21b3-478e-be82-7e7f83bf96d3
+start=22760, size=10240, type=${xbootldr_guid}, uuid=4985c03e-eecb-4fe0-9f65-3f6345782214
+EOF
+
+    truncate -s 60MiB "$imgs/copy_to"
+    output=$(systemd-repart --offline="$OFFLINE" \
+                            --empty=allow \
+                            --definitions="$defs" \
+                            --seed="$seed" \
+                            --dry-run=no \
+                            --json=pretty \
+                            --copy-from="$imgs/copy_from" \
+                            "$imgs/copy_to")
+
+    output=$(sfdisk --dump "$imgs/copy_to")
+
+    assert_in "first-lba: 2048" "$output"
+    assert_in "last-lba: 122846" "$output"
+    assert_in "$imgs/copy_to1 : start=        2048, size=       20480, type=${root_guid}," "$output"
+    assert_in "$imgs/copy_to2 : start=       22528, size=       10240, type=${xbootldr_guid}," "$output"
+    assert_in "$imgs/copy_to3 : start=       32768, size=       90072, type=${esp_guid}," "$output"
+}
+
+testcase_size_auto_with_grain_size() {
+    local defs imgs output
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    imgs="$(mktemp --directory "/var/tmp/test-repart.imgs.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$imgs'" RETURN
+    chmod 0755 "$defs"
+
+    tee "$defs/01-esp.conf" <<EOF
+[Partition]
+Type=esp
+SizeMinBytes=10M
+EOF
+
+    tee "$defs/02-usr.conf" <<EOF
+[Partition]
+Type=usr-${architecture}
+SizeMinBytes=10M
+EOF
+
+    tee "$defs/03-root.conf" <<EOF
+[Partition]
+Type=root-${architecture}
+SizeMinBytes=10M
+EOF
+
+    systemd-repart --offline="$OFFLINE" \
+                   --empty=create \
+                   --size=auto \
+                   --definitions="$defs" \
+                   --seed="$seed" \
+                   --dry-run=no \
+                   --grain-size=2097152 \
+                   "$imgs/auto"
+
+    output=$(sfdisk --dump "$imgs/auto")
+
+    assert_in "first-lba: 2048" "$output"
+    assert_in "last-lba: 65535" "$output"
+    assert_in "$imgs/auto1 : start=        4096, size=       20480, type=${esp_guid}," "$output"
+    assert_in "$imgs/auto2 : start=       24576, size=       20480, type=${usr_guid}," "$output"
+    assert_in "$imgs/auto3 : start=       45056, size=       20480, type=${root_guid}," "$output"
 }
 
 testcase_dropin() {
@@ -2132,6 +2294,35 @@ EOF
     losetup -d "$loop"
 }
 
+testcase_generate_fstab_dry_run() {
+    local defs root
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    root="$(mktemp --directory "/var/test-repart.root.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$root'" RETURN
+    chmod 0755 "$defs"
+
+    echo "*** testcase for skipping generated fstab in dry-run mode ***"
+
+    mkdir -p "$root/etc"
+    tee "$defs/root.conf" <<EOF
+[Partition]
+Type=root
+Format=ext4
+MountPoint=/
+EOF
+
+    systemd-repart --pretty=yes \
+                   --definitions "$defs" \
+                   --dry-run=yes \
+                   --seed="$seed" \
+                   --generate-fstab="$root/etc/fstab" \
+                   -
+
+    test ! -e "$root/etc/fstab"
+}
+
 testcase_block_device_replace() {
     if [[ "$OFFLINE" == "yes" ]]; then
         return 0
@@ -2227,6 +2418,92 @@ EOF
     assert_eq "$(udevadm info --query=property --property=DEVNAME --value "${encrypted_device}")" "${loop}p2"
     grep -q tada "${btrfs_mntpoint_plain}/magic-plain"
     grep -q tada "${btrfs_mntpoint_encrypted}/magic-encrypted"
+}
+
+testcase_distribute_leftover_space() {
+    local defs imgs output
+
+    defs="$(mktemp --directory "/tmp/test-repart.defs.XXXXXXXXXX")"
+    imgs="$(mktemp --directory "/var/tmp/test-repart.imgs.XXXXXXXXXX")"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$defs' '$imgs'" RETURN
+    chmod 0755 "$defs"
+
+    echo "*** Left over space after distributing according to weights should still be assigned ***"
+
+    tee "$defs/01-esp.conf" <<EOF
+[Partition]
+Type=esp
+Weight=1
+SizeMinBytes=5M
+EOF
+
+    tee "$defs/02-usr.conf" <<EOF
+[Partition]
+Type=usr-${architecture}
+Weight=1000
+SizeMinBytes=1M
+SizeMaxBytes=2M
+EOF
+
+    truncate -s 20M "$imgs/leftover.img"
+    systemd-repart --offline="$OFFLINE" \
+                   --definitions="$defs" \
+                   --seed="$seed" \
+                   --dry-run=no \
+                   --empty=allow \
+                   "$imgs/leftover.img"
+
+    output=$(sfdisk --dump "$imgs/leftover.img")
+
+    # esp should get all the leftover space
+    assert_in "$imgs/leftover.img1 : start=        2048, size=       34776, type=$esp_guid," "$output"
+    assert_in "$imgs/leftover.img2 : start=       36824, size=        4096, type=$usr_guid," "$output"
+
+    rm "$defs/01-esp.conf"
+    rm "$defs/02-usr.conf"
+    rm "$imgs/leftover.img"
+
+    tee "$defs/01-xbootldr.conf" <<EOF
+[Partition]
+Type=xbootldr
+SizeMaxBytes=10M
+EOF
+
+    tee "$defs/02-usr.conf" <<EOF
+[Partition]
+Type=usr-${architecture}
+Weight=1000
+SizeMinBytes=1M
+SizeMaxBytes=2M
+EOF
+
+    tee "$defs/03-esp.conf" <<EOF
+[Partition]
+Type=esp
+Weight=1
+SizeMinBytes=5M
+EOF
+
+    truncate -s 25M "$imgs/leftover2.img"
+    sfdisk "$imgs/leftover2.img" <<EOF
+label: gpt
+size=3M, type=${xbootldr_guid},
+EOF
+
+    systemd-repart --offline="$OFFLINE" \
+                   --definitions="$defs" \
+                   --seed="$seed" \
+                   --dry-run=no \
+                   --empty=allow \
+                   "$imgs/leftover2.img"
+
+    output=$(sfdisk --dump "$imgs/leftover2.img")
+
+    # xbootldr should get the leftover space and grow to 10M, then esp should get the rest
+    assert_in "$imgs/leftover2.img1 : start=        2048, size=       20480, type=$xbootldr_guid," "$output"
+    assert_in "$imgs/leftover2.img2 : start=       22528, size=        4096, type=$usr_guid," "$output"
+    assert_in "$imgs/leftover2.img3 : start=       26624, size=       24536, type=$esp_guid," "$output"
 }
 
 OFFLINE="yes"

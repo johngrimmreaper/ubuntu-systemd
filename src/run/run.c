@@ -545,19 +545,24 @@ static int parse_argv(int argc, char *argv[]) {
                 OPTION_LONG("on-calendar", "SPEC", "Realtime timer"): {
                         _cleanup_(calendar_spec_freep) CalendarSpec *cs = NULL;
 
-                        r = calendar_spec_from_string(opts.arg, &cs);
+                        r = calendar_spec_from_string_full(opts.arg, &cs, /* warn_on_weekday_mismatch= */ true);
                         if (r < 0)
                                 return log_error_errno(r, "Failed to parse calendar event specification: %m");
 
                         /* Let's make sure the given calendar event is not in the past */
                         r = calendar_spec_next_usec(cs, now(CLOCK_REALTIME), NULL);
-                        if (r == -ENOENT)
-                                /* The calendar event is in the past — let's warn about this, but install it
-                                 * anyway as is. The service manager will trigger the service right away.
-                                 * Moreover, the server side might have a different clock or timezone than we
-                                 * do, hence it should decide when or whether to run something. */
-                                log_warning("Specified calendar expression is in the past, proceeding anyway.");
-                        else if (r < 0)
+                        if (r == -ENOENT) {
+                                /* The calendar event might be in the past, so let's warn about this, but
+                                 * install it anyway as is. The service manager will trigger the service
+                                 * right away. Moreover, the server side might have a different clock or
+                                 * timezone than we do, hence it should decide when or whether to run
+                                 * something.
+                                 *
+                                 * However, a mismatching weekday for a fixed date also results in -ENOENT,
+                                 * and was already warned about when parsing. */
+                                if (!calendar_spec_weekday_conflicts(cs, NULL))
+                                        log_warning("Specified calendar expression is in the past, proceeding anyway.");
+                        } else if (r < 0)
                                 return log_error_errno(r, "Failed to calculate next time calendar expression elapses: %m");
 
                         r = add_timer_property("OnCalendar", opts.arg);
@@ -683,9 +688,13 @@ static int parse_argv(int argc, char *argv[]) {
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
                                        "Scope execution is not supported on remote systems.");
 
-        if (arg_scope && (arg_remain_after_exit || arg_service_type))
+        if (arg_scope && (arg_remain_after_exit || arg_service_type || arg_ignore_failure))
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
-                                       "--remain-after-exit and --service-type= are not supported in --scope mode.");
+                                       "--remain-after-exit, --service-type= and --ignore-failure are not supported in --scope mode.");
+
+        if (arg_scope && arg_no_block)
+                return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                       "--no-block is not supported in --scope mode.");
 
         if (arg_stdio != ARG_STDIO_NONE) {
                 if (with_trigger || arg_scope)
@@ -699,6 +708,10 @@ static int parse_argv(int argc, char *argv[]) {
                 if (arg_no_block)
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
                                                "--pty/--pty-late/--pipe is not compatible with --no-block.");
+
+                if (arg_remain_after_exit)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--pty/--pty-late/--pipe is not compatible with --remain-after-exit.");
         }
 
         if (arg_stdio == ARG_STDIO_PTY && arg_pty_late && streq_ptr(arg_service_type, "oneshot"))
@@ -708,6 +721,24 @@ static int parse_argv(int argc, char *argv[]) {
         if (arg_scope && with_trigger)
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
                                        "Path, socket or timer options are not supported in --scope mode.");
+
+        if (sd_json_format_enabled(arg_json_format_flags)) {
+                if (arg_scope)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--json= is not supported in --scope mode.");
+
+                if (arg_stdio != ARG_STDIO_NONE)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--json= is not compatible with --pty/--pty-late/--pipe.");
+
+                if (arg_verbose)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--json= is not compatible with --verbose.");
+
+                if (with_trigger)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--json= is not compatible with path, socket or timer operations.");
+        }
 
         if (arg_timer_property && !arg_with_timer)
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
@@ -725,6 +756,10 @@ static int parse_argv(int argc, char *argv[]) {
                 if (arg_scope)
                         return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
                                                "--wait may not be combined with --scope.");
+
+                if (arg_remain_after_exit)
+                        return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                               "--wait may not be combined with --remain-after-exit.");
         }
 
         if (arg_scope && arg_root_directory)
@@ -2753,12 +2788,16 @@ static int start_transient_trigger(sd_bus *bus, const char *suffix) {
         assert(bus);
         assert(suffix);
 
-        r = bus_wait_for_jobs_new(bus, &w);
-        if (r < 0)
-                return log_error_errno(r, "Could not watch jobs: %m");
+        if (!arg_no_block) {
+                r = bus_wait_for_jobs_new(bus, &w);
+                if (r < 0)
+                        return log_error_errno(r, "Could not watch jobs: %m");
+        }
 
         if (arg_unit) {
-                switch (unit_name_to_type(arg_unit)) {
+                UnitType t = unit_name_to_type(arg_unit);
+
+                switch (t) {
 
                 case UNIT_SERVICE:
                         service = strdup(arg_unit);
@@ -2770,7 +2809,14 @@ static int start_transient_trigger(sd_bus *bus, const char *suffix) {
                                 return log_error_errno(r, "Failed to change unit suffix: %m");
                         break;
 
+                case UNIT_PATH:
+                case UNIT_SOCKET:
                 case UNIT_TIMER:
+                        if (!streq(suffix + 1, unit_type_to_string(t)))
+                                return log_error_errno(SYNTHETIC_ERRNO(EINVAL),
+                                                       "Specified unit '%s' does not match requested %s trigger.",
+                                                       arg_unit, suffix + 1);
+
                         trigger = strdup(arg_unit);
                         if (!trigger)
                                 return log_oom();
@@ -2820,10 +2866,12 @@ static int start_transient_trigger(sd_bus *bus, const char *suffix) {
         if (r < 0)
                 return bus_log_parse_error(r);
 
-        r = bus_wait_for_jobs_one(w, object, arg_quiet ? 0 : BUS_WAIT_JOBS_LOG_ERROR,
-                                  arg_runtime_scope == RUNTIME_SCOPE_USER ? STRV_MAKE_CONST("--user") : NULL);
-        if (r < 0)
-                return r;
+        if (w) {
+                r = bus_wait_for_jobs_one(w, object, arg_quiet ? 0 : BUS_WAIT_JOBS_LOG_ERROR,
+                                          arg_runtime_scope == RUNTIME_SCOPE_USER ? STRV_MAKE_CONST("--user") : NULL);
+                if (r < 0)
+                        return r;
+        }
 
         if (!arg_quiet) {
                 log_info("Running %s as unit: %s", suffix + 1, trigger);

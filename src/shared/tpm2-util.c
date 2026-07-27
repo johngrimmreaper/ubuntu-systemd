@@ -2525,7 +2525,7 @@ int tpm2_load(
         if (rc == TPM2_RC_LOCKOUT)
                 return log_debug_errno(SYNTHETIC_ERRNO(ENOLCK),
                                        "TPM2 device is in dictionary attack lockout mode.");
-        if ((rc & ~(TPM2_RC_N_MASK|TPM2_RC_P)) == TPM2_RC_INTEGRITY) /* Return a recognizable error if this key does not belong to the local TPM */
+        if (TPM2_RC_IS_FOREIGN_KEY(rc))
                 return log_debug_errno(SYNTHETIC_ERRNO(EREMOTE),
                                        "Key invalid or does not belong to current TPM.");
         if (rc != TSS2_RC_SUCCESS)
@@ -2745,6 +2745,9 @@ static int tpm2_import(
                         seed,
                         symmetric ?: &(TPMT_SYM_DEF_OBJECT){ .algorithm = TPM2_ALG_NULL, },
                         ret_private);
+        if (TPM2_RC_IS_FOREIGN_KEY(rc))
+                return log_debug_errno(SYNTHETIC_ERRNO(EREMOTE),
+                                       "Key invalid or does not belong to current TPM.");
         if (rc != TSS2_RC_SUCCESS)
                 return log_debug_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
                                        "Failed to import key into TPM: %s", sym_Tss2_RC_Decode(rc));
@@ -3531,7 +3534,7 @@ static int find_signature(
         /* First, find field by bank */
         b = sd_json_variant_by_key(v, k);
         if (!b)
-                return log_debug_errno(SYNTHETIC_ERRNO(ENXIO), "Signature lacks data for PCR bank '%s'.", k);
+                return log_debug_errno(SYNTHETIC_ERRNO(ENOSTR), "Signature lacks data for PCR bank '%s'.", k);
 
         if (!sd_json_variant_is_array(b))
                 return log_debug_errno(SYNTHETIC_ERRNO(EINVAL), "Bank data is not a JSON array.");
@@ -3590,7 +3593,7 @@ static int find_signature(
                 return sd_json_variant_unbase64(sigj, ret_signature, ret_signature_size);
         }
 
-        return log_debug_errno(SYNTHETIC_ERRNO(ENXIO), "Couldn't find signature for this PCR bank, PCR index and public key.");
+        return log_debug_errno(SYNTHETIC_ERRNO(ENOSTR), "Couldn't find signature for this PCR bank, PCR index and public key.");
 #else /* HAVE_OPENSSL */
         return log_debug_errno(SYNTHETIC_ERRNO(EOPNOTSUPP), "OpenSSL support is disabled.");
 #endif
@@ -4027,6 +4030,10 @@ int tpm2_policy_authorize_nv(
                                                                   * just put together */
                 return log_debug_errno(SYNTHETIC_ERRNO(EREMCHG),
                                        "Submitted policy does not match policy stored in PolicyAuthorizeNV.");
+        if ((rc & ~(TPM2_RC_N_MASK|TPM2_RC_P)) == TPM2_RC_HANDLE ||
+            rc == TPM2_RC_NV_UNINITIALIZED) /* NV index is missing, unwritten, or otherwise unusable for this policy (or: wrong authHandle/policySession). */
+                return log_debug_errno(SYNTHETIC_ERRNO(EADDRNOTAVAIL),
+                                       "NV index referenced by token is missing, unwritten, or unusable, it could be for another system.");
         if (rc != TSS2_RC_SUCCESS)
                 return log_debug_errno(SYNTHETIC_ERRNO(ENOTRECOVERABLE),
                                        "Failed to add AuthorizeNV policy to TPM: %s",
@@ -5874,6 +5881,8 @@ int tpm2_unseal(Tpm2Context *c,
         /* Returns the following errors:
          *
          *   -EREMOTE         → blob is from a different TPM
+         *   -EADDRNOTAVAIL   → NV index referenced by policy is missing, unwritten, or unusable
+         *   -ENOSTR          → signature JSON has no matching entry for the current PCR policy
          *   -EDEADLK         → couldn't create primary key because authorization failure
          *   -ENOLCK          → TPM is in dictionary lockout mode
          *   -EREMCHG         → submitted policy doesn't match NV index stored policy (in case of PolicyAuthorizeNV)
@@ -6445,7 +6454,7 @@ static int tpm2_define_nvpcr_nv_index(
                         &public_info,
                         &new_handle->esys_handle);
         if (rc == TPM2_RC_NV_SPACE)
-                return log_debug_errno(SYNTHETIC_ERRNO(ENOSPC),
+                return log_debug_errno(SYNTHETIC_ERRNO(ENOBUFS),
                                        "NV index space on TPM exhausted, cannot allocate NvPCR.");
         if (rc == TPM2_RC_NV_DEFINED) {
                 log_debug("NV index 0x%" PRIu32 " already registered.", nv_index);
@@ -6963,8 +6972,9 @@ static int tpm2_userspace_log_dirty(int fd) {
 
         /* We set the sticky bit when we are about to append to the log file. We'll unset it afterwards
          * again. If we manage to take a lock on a file that has it set we know we didn't write it fully and
-         * it is corrupted. Ideally we'd like to use user xattrs for this, but unfortunately tmpfs (which is
-         * our assumed backend fs) doesn't know user xattrs. */
+         * it is corrupted. We return -ESTALE then; callers shall not reset the marker when they are done,
+         * so that the incompleteness remains detectable. Ideally we'd like to use user xattrs for this, but
+         * unfortunately tmpfs (which is our assumed backend fs) doesn't know user xattrs. */
 
         if (fstat(fd, &st) < 0)
                 return log_debug_errno(errno, "Failed to fstat TPM log file, ignoring: %m");
@@ -6978,7 +6988,7 @@ static int tpm2_userspace_log_dirty(int fd) {
         return 0;
 }
 
-static int tpm2_userspace_log_clean(int fd) {
+static int tpm2_userspace_log_clean(int fd, bool reset_marker) {
         int r;
 
         if (fd < 0) /* Apparently tpm2_local_log_open() failed earlier, let's not complain again */
@@ -6986,6 +6996,12 @@ static int tpm2_userspace_log_clean(int fd) {
 
         if (fsync(fd) < 0)
                 return log_debug_errno(errno, "Failed to sync JSON data: %m");
+
+        /* If the dirty marker was already set when we acquired the log, an earlier writer died before
+         * writing its record, i.e. the log is missing a record. Keep the marker then, so that the
+         * incompleteness remains detectable. */
+        if (!reset_marker)
+                return 0;
 
         /* Unset S_ISVTX again */
         if (fchmod(fd, 0600) < 0)
@@ -7005,7 +7021,8 @@ static int tpm2_userspace_log(
                 const char *nv_index_name,
                 const TPML_DIGEST_VALUES *values,
                 Tpm2UserspaceEventType event_type,
-                const char *description) {
+                const char *description,
+                bool reset_marker) {
 
         _cleanup_(sd_json_variant_unrefp) sd_json_variant *v = NULL, *array = NULL;
         _cleanup_free_ char *f = NULL;
@@ -7094,7 +7111,7 @@ static int tpm2_userspace_log(
         if (r < 0)
                 return log_debug_errno(r, "Failed to write JSON data to log: %m");
 
-        r = tpm2_userspace_log_clean(fd);
+        r = tpm2_userspace_log_clean(fd, reset_marker);
         if (r < 0)
                 return r;
 
@@ -7171,7 +7188,7 @@ int tpm2_pcr_extend_bytes(
          * and our measurement and change either */
         log_fd = tpm2_userspace_log_open();
 
-        (void) tpm2_userspace_log_dirty(log_fd);
+        bool reset_marker = tpm2_userspace_log_dirty(log_fd) >= 0;
         rc = sym_Esys_PCR_Extend(
                         c->esys_context,
                         ESYS_TR_PCR0 + pcr_index,
@@ -7194,7 +7211,8 @@ int tpm2_pcr_extend_bytes(
                         /* nv_index_name= */ NULL,
                         &values,
                         event_type,
-                        description);
+                        description,
+                        reset_marker);
 
         return 0;
 #else /* HAVE_OPENSSL */
@@ -7281,7 +7299,7 @@ int tpm2_nvpcr_get_index(const char *name, uint32_t *ret_nv_index, uint64_t *ret
         return 0;
 }
 
-int tpm2_nvpcr_extend_bytes(
+static int nvpcr_extend_bytes(
                 Tpm2Context *c,
                 const Tpm2Handle *session,
                 const char *name,
@@ -7363,7 +7381,7 @@ int tpm2_nvpcr_extend_bytes(
 
         log_debug("Successfully acquired handle to existing NV index 0x%" PRIx32 ".", p.nv_index);
 
-        (void) tpm2_userspace_log_dirty(log_fd);
+        bool reset_marker = tpm2_userspace_log_dirty(log_fd) >= 0;
 
         r = tpm2_extend_nvpcr_nv_index(
                         c,
@@ -7387,12 +7405,44 @@ int tpm2_nvpcr_extend_bytes(
                         name,
                         &digest_values,
                         event_type,
-                        description);
+                        description,
+                        reset_marker);
 
         return 0;
 #else /* HAVE_OPENSSL */
         return log_debug_errno(SYNTHETIC_ERRNO(EOPNOTSUPP), "OpenSSL support is disabled.");
 #endif
+}
+
+int tpm2_nvpcr_extend_bytes(
+                Tpm2Context *c,
+                const Tpm2Handle *session,
+                const char *name,
+                const struct iovec *data,
+                const struct iovec *secret,
+                bool sync_secondary_anchor,
+                Tpm2UserspaceEventType event_type,
+                const char *description) {
+
+        int r;
+
+        r = nvpcr_extend_bytes(c, session, name, data, secret, event_type, description);
+        if (r != -ENETDOWN)
+                return r;
+
+        /* The NvPCR isn't anchored yet, i.e. systemd-tpm2-setup hasn't run.
+         * Anchor it now and extend again. */
+
+        _cleanup_(iovec_done_erase) struct iovec anchor_secret = {};
+        r = tpm2_nvpcr_acquire_anchor_secret(&anchor_secret, sync_secondary_anchor);
+        if (r < 0)
+                return log_debug_errno(r, "Failed to acquire anchor secret for NvPCR '%s': %m", name);
+
+        r = tpm2_nvpcr_initialize(c, session, name, &anchor_secret);
+        if (r < 0)
+                return log_debug_errno(r, "Failed to initialize NvPCR '%s' with anchor secret: %m", name);
+
+        return nvpcr_extend_bytes(c, session, name, data, secret, event_type, description);
 }
 
 #if HAVE_OPENSSL
@@ -7891,7 +7941,7 @@ int tpm2_nvpcr_initialize(
 
         log_debug("Successfully acquired handle to NV index 0x%" PRIx32 ".", p.nv_index);
 
-        tpm2_userspace_log_dirty(log_fd);
+        bool reset_marker = tpm2_userspace_log_dirty(log_fd) >= 0;
         rc = sym_Esys_NV_Extend(
                         c->esys_context,
                         /* authHandle= */ nv_handle->esys_handle,
@@ -7929,7 +7979,7 @@ int tpm2_nvpcr_initialize(
         if (r < 0)
                 return log_debug_errno(r, "Failed to write anchor file: %m");
 
-        tpm2_userspace_log_clean(log_fd);
+        (void) tpm2_userspace_log_clean(log_fd, reset_marker);
         log_fd = safe_close(log_fd);
 
         /* Now also measure the initialization into PCR 9, so that there's a trace of it in regular PCRs. You

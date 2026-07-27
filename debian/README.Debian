@@ -73,15 +73,15 @@ if you want to use it. After that you need to create some *.network
 configuration files. In the simplest case you just want to run DHCP on all
 available Ethernet interfaces:
 
---- /etc/systemd/network/all-eth.network ---
-[Match]
-Name=e*
-[Network]
-DHCP=yes
+  # /etc/systemd/network/60-dhcp.network
+  [Match]
+  Name=en*
 
-This will match on both the kernel "ethN" as well as the predictable interface
-names "en*". Please see man systemd.network(5) for all available configuration
-options and examples.
+  [Network]
+  DHCP=yes
+
+Please see man systemd.network(5) for all available configuration options
+and examples.
 
 You need to make sure that interfaces handled by networkd are not handled by
 ifupdown (/etc/network/interfaces) and NetworkManager.

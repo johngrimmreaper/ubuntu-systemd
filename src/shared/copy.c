@@ -958,7 +958,7 @@ static int fd_copy_fifo(
                      AT_SYMLINK_NOFOLLOW) < 0)
                 r = -errno;
 
-        if (fchmodat(dt, to, st->st_mode & 07777, 0) < 0)
+        if (fchmodat(dt, to, st->st_mode & 07777, AT_SYMLINK_NOFOLLOW) < 0)
                 r = -errno;
 
         (void) utimensat(dt, to, (struct timespec[]) { st->st_atim, st->st_mtim }, AT_SYMLINK_NOFOLLOW);
@@ -1011,7 +1011,7 @@ static int fd_copy_node(
                      AT_SYMLINK_NOFOLLOW) < 0)
                 r = -errno;
 
-        if (fchmodat(dt, to, st->st_mode & 07777, 0) < 0)
+        if (fchmodat(dt, to, st->st_mode & 07777, AT_SYMLINK_NOFOLLOW) < 0)
                 r = -errno;
 
         (void) utimensat(dt, to, (struct timespec[]) { st->st_atim, st->st_mtim }, AT_SYMLINK_NOFOLLOW);
@@ -1637,7 +1637,11 @@ int copy_file_atomic_at_full(
         return 0;
 
 fail:
-        (void) unlinkat(dir_fdt, to, 0);
+        /* link_tmpfile_at() succeeded, so 'to' is now published. In replacement mode, do not
+         * remove it again, as that may delete a pre-existing target replaced by this copy. */
+        if (!FLAGS_SET(copy_flags, COPY_REPLACE))
+                (void) unlinkat(dir_fdt, to, 0);
+
         return r;
 }
 

@@ -1,10 +1,3 @@
-# These are all services which have native implementations
-# So we mask them by linking against /dev/null or create an alias
-/usr/lib/systemd/system/systemd-sysctl.service /usr/lib/systemd/system/procps.service
-
-/usr/lib/systemd/system/systemd-modules-load.service /usr/lib/systemd/system/kmod.service
-/etc/modules /etc/modules-load.d/modules.conf
-
 # X server and ICE socket directories are created by /usr/lib/tmpfiles.d/x11.conf
 /dev/null /usr/lib/systemd/system/x11-common.service
 

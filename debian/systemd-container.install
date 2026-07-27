@@ -36,6 +36,7 @@ usr/lib/systemd/system/systemd-portabled.service
 usr/lib/systemd/system/systemd-storage-*
 usr/lib/systemd/system/systemd-sysupdate-reboot.service
 usr/lib/systemd/system/systemd-sysupdate-reboot.timer
+<pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-auto-enable.service
 <pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-update.service
 <pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate-update.timer
 <pkg.systemd.upstream> usr/lib/systemd/system/systemd-sysupdate@.service
@@ -95,6 +96,7 @@ usr/share/polkit-1/actions/org.freedesktop.machine1.policy
 usr/share/polkit-1/actions/org.freedesktop.portable1.policy
 <pkg.systemd.upstream> usr/share/polkit-1/actions/org.freedesktop.sysupdate1.policy
 usr/share/zsh/vendor-completions/_systemd-nspawn
+<pkg.systemd.upstream> usr/share/zsh/vendor-completions/_systemd-sysupdate
 usr/share/zsh/vendor-completions/_sd_machines
 usr/share/zsh/vendor-completions/_machinectl
 usr/share/zsh/vendor-completions/_storagectl
@@ -102,5 +104,6 @@ usr/share/bash-completion/completions/machinectl
 usr/share/bash-completion/completions/portablectl
 usr/share/bash-completion/completions/storagectl
 usr/share/bash-completion/completions/systemd-nspawn
+<pkg.systemd.upstream> usr/share/bash-completion/completions/systemd-sysupdate
 usr/share/bash-completion/completions/systemd-vmspawn
 usr/share/bash-completion/completions/importctl

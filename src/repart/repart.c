@@ -99,9 +99,6 @@
 /* We know up front we're never going to put more than this in a verity sig partition. */
 #define VERITY_SIG_SIZE (HARD_MIN_SIZE*4ULL)
 
-/* libfdisk takes off slightly more than 1M of the disk size when creating a GPT disk label */
-#define GPT_METADATA_SIZE (1044ULL*1024ULL)
-
 /* LUKS2 takes off 16M of the partition size with its metadata by default */
 #define LUKS2_METADATA_SIZE (16ULL*1024ULL*1024ULL)
 
@@ -1652,23 +1649,14 @@ static bool context_grow_partitions_phase(
         return !try_again;
 }
 
-static void context_grow_partition_one(Context *context, FreeArea *a, Partition *p, uint64_t *span) {
+static void context_grow_partition_one(Context *context, Partition *p, uint64_t *span) {
         uint64_t m;
 
         assert(context);
-        assert(a);
         assert(p);
         assert(span);
 
-        if (*span == 0)
-                return;
-
-        if (p->allocated_to_area != a)
-                return;
-
-        if (PARTITION_IS_FOREIGN(p))
-                return;
-
+        assert(*span > 0);
         assert(p->new_size != UINT64_MAX);
 
         /* Calculate new size and align. */
@@ -1708,15 +1696,15 @@ static int context_grow_partitions_on_free_area(Context *context, FreeArea *a) {
                 if (context_grow_partitions_phase(context, a, phase, &span, &weight_sum))
                         phase++; /* go to the next phase */
 
-        /* We still have space left over? Donate to preceding partition if we have one */
-        if (span > 0 && a->after)
-                context_grow_partition_one(context, a, a->after, &span);
 
-        /* What? Even still some space left (maybe because there was no preceding partition, or it had a
-         * size limit), then let's donate it to whoever wants it. */
+        /* What? Even still some space left (because one partition had max_size < share
+         * and another had min_size > share), then let's donate it to whoever wants it. */
         if (span > 0)
                 LIST_FOREACH(partitions, p, context->partitions) {
-                        context_grow_partition_one(context, a, p, &span);
+                        if (p->allocated_to_area != a && p->padding_area != a)
+                                continue;
+
+                        context_grow_partition_one(context, p, &span);
                         if (span == 0)
                                 break;
                 }
@@ -3268,10 +3256,12 @@ static int determine_current_padding(
                 struct fdisk_partition *p,
                 uint64_t secsz,
                 uint64_t grainsz,
-                uint64_t *ret) {
+                uint64_t *ret,
+                bool *ret_is_last_partition) {
 
         size_t n_partitions;
         uint64_t offset, next = UINT64_MAX;
+        bool is_last_partition = false;
 
         assert(c);
         assert(t);
@@ -3311,6 +3301,8 @@ static int determine_current_padding(
         }
 
         if (next == UINT64_MAX) {
+                is_last_partition = true;
+
                 /* No later partition? In that case check the end of the usable area */
                 next = sym_fdisk_get_last_lba(c);
                 assert(next < UINT64_MAX);
@@ -3327,6 +3319,9 @@ static int determine_current_padding(
         offset = round_up_size(offset, grainsz);
         next = round_down_size(next, grainsz);
 
+        if (ret_is_last_partition)
+                *ret_is_last_partition = is_last_partition;
+
         *ret = LESS_BY(next, offset); /* Saturated subtraction, rounding might have fucked things up */
         return 0;
 }
@@ -3336,7 +3331,7 @@ static int context_copy_from_one(Context *context, const char *src) {
         _cleanup_(fdisk_unref_contextp) struct fdisk_context *c = NULL;
         _cleanup_(fdisk_unref_tablep) struct fdisk_table *t = NULL;
         Partition *last = NULL;
-        unsigned long secsz, grainsz;
+        unsigned long secsz;
         size_t n_partitions;
         int r;
 
@@ -3355,7 +3350,6 @@ static int context_copy_from_one(Context *context, const char *src) {
                 return log_error_errno(r, "Failed to create fdisk context: %m");
 
         secsz = sym_fdisk_get_sector_size(c);
-        grainsz = sym_fdisk_get_grain_size(c);
 
         /* Insist on a power of two, and that it's a multiple of 512, i.e. the traditional sector size. */
         if (secsz < 512 || !ISPOWEROF2(secsz))
@@ -3377,6 +3371,7 @@ static int context_copy_from_one(Context *context, const char *src) {
                 uint64_t sz, start, padding;
                 sd_id128_t ptid, id;
                 GptPartitionType type;
+                bool is_last_partition;
 
                 p = sym_fdisk_table_get_partition(t, i);
                 if (!p)
@@ -3436,11 +3431,14 @@ static int context_copy_from_one(Context *context, const char *src) {
                 if (!np->split_name_format)
                         return log_oom();
 
-                r = determine_current_padding(c, t, p, secsz, grainsz, &padding);
+                /* Pass grain size of 1 to disable rounding by grain as we don't know the grain size
+                 * of the old image. We'll round paddings to the grain size of the new image later. */
+                r = determine_current_padding(c, t, p, secsz, /* grainsz= */ 1, &padding, &is_last_partition);
                 if (r < 0)
                         return r;
 
-                np->padding_min = np->padding_max = padding;
+                if (!is_last_partition)
+                        np->padding_min = np->padding_max = padding;
 
                 np->copy_blocks_path = strdup(src);
                 if (!np->copy_blocks_path)
@@ -4035,7 +4033,14 @@ static int context_load_partition_table(Context *context) {
                                 pp->current_partition = p;
                                 sym_fdisk_ref_partition(p);
 
-                                r = determine_current_padding(c, t, p, secsz, grainsz, &pp->current_padding);
+                                r = determine_current_padding(
+                                                c,
+                                                t,
+                                                p,
+                                                secsz,
+                                                grainsz,
+                                                &pp->current_padding,
+                                                /* ret_is_last_partition= */ NULL);
                                 if (r < 0)
                                         return r;
 
@@ -4068,7 +4073,14 @@ static int context_load_partition_table(Context *context) {
                         np->current_partition = p;
                         sym_fdisk_ref_partition(p);
 
-                        r = determine_current_padding(c, t, p, secsz, grainsz, &np->current_padding);
+                        r = determine_current_padding(
+                                        c,
+                                        t,
+                                        p,
+                                        secsz,
+                                        grainsz,
+                                        &np->current_padding,
+                                        /* ret_is_last_partition= */ NULL);
                         if (r < 0)
                                 return r;
 
@@ -9405,6 +9417,11 @@ static int context_fstab(Context *context) {
                 return 0;
         }
 
+        if (arg_dry_run) {
+                log_notice("Running in dry run mode, not generating %s", arg_generate_fstab);
+                return 0;
+        }
+
         path = path_join(arg_copy_source, arg_generate_fstab);
         if (!path)
                 return log_oom();
@@ -9534,6 +9551,11 @@ static int context_crypttab(Context *context, bool late) {
         if (!need_crypttab(context)) {
                 log_notice("EncryptedVolume= is not specified for any eligible partitions, not generating %s",
                            arg_generate_crypttab);
+                return 0;
+        }
+
+        if (arg_dry_run) {
+                log_notice("Running in dry run mode, not generating %s", arg_generate_crypttab);
                 return 0;
         }
 
@@ -11196,12 +11218,26 @@ static int determine_auto_size(
 
         assert(c);
 
-        minimal_size = round_up_size(GPT_METADATA_SIZE, 4096);
+        /* At the beginning of the image, some size is reserved for:
+         * Protective MBR (1 block) + GPT header (1 block) +
+         * Primary partition table (minimum 16KiB) = (2 * c->sector_size) + (16 * 1024)
+         *
+         * Note that fdisk usually sets the first usable block to 1MiB (at least for
+         * disks larger than 4MiB), so we just force it to that as well. If fdisk
+         * decides to set it lower, we made the image a bit larger than necessary,
+         * if it sets it higher, we'd have a problem. */
+        minimal_size = 1024 * 1024;
+        /* Of course need to align the start to our grain size as well */
+        minimal_size = round_up_size(minimal_size, c->grain_size);
+
+        /* At the end of the image, there is size reserved for:
+         * Secondary partition table (minimum 16KiB) + GPT header (1 block) */
+        minimal_size += (16 * 1024) + c->sector_size;
 
         if (c->from_scratch)
                 current_size = 0;
         else
-                current_size = round_up_size(GPT_METADATA_SIZE, 4096);
+                current_size = minimal_size;
 
         foreign_size = 0;
 
@@ -11265,10 +11301,13 @@ static int context_ponder(Context *context) {
                 if (context_drop_or_foreignize_one_priority(context))
                         continue; /* Still no luck. Let's drop a priority and try again. */
 
-                /* No more priorities left to drop. This configuration just doesn't fit on this disk... */
-                return log_error_errno(SYNTHETIC_ERRNO(ENOSPC),
-                                       "Can't fit requested partitions into available free space (%s), refusing.",
-                                       FORMAT_BYTES(largest_free_area));
+                /* No more priorities left to drop. This configuration just doesn't fit on this disk...
+                 * In Varlink service mode the failure is reported to the client as a structured error,
+                 * hence only log at debug level here. */
+                return log_full_errno(arg_varlink ? LOG_DEBUG : LOG_ERR,
+                                      SYNTHETIC_ERRNO(ENOSPC),
+                                      "Can't fit requested partitions into available free space (%s), refusing.",
+                                      FORMAT_BYTES(largest_free_area));
         }
 
         LIST_FOREACH(partitions, p, context->partitions) {
@@ -11504,7 +11543,7 @@ static int vl_method_run(
                         return sd_varlink_errorbo(
                                         link,
                                         "io.systemd.Repart.DiskTooSmall",
-                                        SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", current_size),
+                                        SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", context->total),
                                         SD_JSON_BUILD_PAIR_UNSIGNED("minimalSizeBytes", minimal_size));
 
                 /* Or if the disk would fit, but theres's not enough unallocated space */
@@ -11512,7 +11551,7 @@ static int vl_method_run(
                 return sd_varlink_errorbo(
                                 link,
                                 "io.systemd.Repart.InsufficientFreeSpace",
-                                SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", current_size),
+                                SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", context->total),
                                 JSON_BUILD_PAIR_UNSIGNED_NON_ZERO("needFreeBytes", need_free),
                                 SD_JSON_BUILD_PAIR_UNSIGNED("minimalSizeBytes", minimal_size));
         }
@@ -11520,17 +11559,17 @@ static int vl_method_run(
                 return r;
 
         if (p.dry_run) {
-                uint64_t current_size, minimal_size;
+                uint64_t minimal_size;
 
                 /* If we are doing a dry-run, report the minimal size. */
-                r = determine_auto_size(context, LOG_DEBUG, &current_size, /* ret_foreign_size= */ NULL, &minimal_size);
+                r = determine_auto_size(context, LOG_DEBUG, /* ret_current_size= */ NULL, /* ret_foreign_size= */ NULL, &minimal_size);
                 if (r < 0)
                         return r;
 
                 return sd_varlink_replybo(
                                 link,
                                 SD_JSON_BUILD_PAIR_UNSIGNED("minimalSizeBytes", minimal_size),
-                                SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", current_size));
+                                SD_JSON_BUILD_PAIR_UNSIGNED("currentSizeBytes", context->total));
         }
 
         r = context_write_partition_table(context);

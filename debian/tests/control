@@ -112,6 +112,7 @@ Depends: systemd-sysv,
   python3-pefile,
   dhcpcd-base | dhcpcd5,
   procps,
+  mount,
 Restrictions: needs-root, isolation-container, allow-stderr
 
 Tests: unit-tests
@@ -161,6 +162,7 @@ Depends: systemd-tests,
   dosfstools,
   bsdutils,
   bsdextrautils,
+  mount,
 Restrictions: needs-root, isolation-container, skippable
 
 Tests: boot-smoke

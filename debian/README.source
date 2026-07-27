@@ -109,6 +109,19 @@ debian/git-cherry-pick is a nice tool to automate all that:
   debian/git-cherry-pick 123DEADBEEF 987654 AFFE99
   git checkout master  # switch back from patch-queue branch
 
+Rationale for splitting out new binary packages
+-----------------------------------------------
+Broadly speaking, binary packages have either one (or both) of these two purposes:
+
+- provide an integration point that automatically sets up some functionality
+  upon install (e.g.: systemd-boot)
+- avoids dependencies on other packages from being added to the main package
+  (e.g.: systemd-cryptsetup)
+
+If either (or both) of those two requirements apply, then a new component is
+a good candidate for the creation of a new binary package. If neither applies,
+then it is most likely fine to keep it in the main binary package.
+
 udeb packages
 -------------
 Packages for the installer (udebs) are built from a separate systemd-udeb

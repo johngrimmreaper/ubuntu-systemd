@@ -357,6 +357,33 @@ static char *ascii_ellipsize_mem(const char *s, size_t old_length, size_t new_le
         return t;
 }
 
+/* Walk backwards from 'end' (exclusive) to the start of the last complete UTF-8 character, without
+ * descending below 'start', validate it and return a pointer to its first byte, optionally decoding it
+ * into *ret_c. Returns NULL on a truncated or otherwise malformed sequence. */
+static const char* find_previous_unichar(const char *start, const char *end, char32_t *ret_c) {
+        const char *p;
+        int r;
+
+        assert(start);
+        assert(end);
+        assert(end > start);
+
+        for (p = end; p > start; ) {
+                p--;
+                if (((uint8_t) *p & 0xc0) != 0x80) /* Found a non-continuation byte, i.e. a character start. */
+                        break;
+        }
+
+        r = utf8_encoded_valid_unichar(p, end - p);
+        if (r < 0 || p + r != end)
+                return NULL;
+
+        if (ret_c)
+                assert_se(utf8_encoded_to_unichar(p, ret_c) == r);
+
+        return p;
+}
+
 char* ellipsize_mem(const char *s, size_t old_length, size_t new_length, unsigned percent) {
         size_t x, k, len, len2;
         const char *i, *j;
@@ -400,10 +427,12 @@ char* ellipsize_mem(const char *s, size_t old_length, size_t new_length, unsigne
                         continue;  /* ANSI sequences don't take up any space in output */
                 }
 
-                char32_t c;
-                r = utf8_encoded_to_unichar(i, &c);
+                r = utf8_encoded_valid_unichar(i, s + old_length - i);
                 if (r < 0)
                         return NULL;
+
+                char32_t c;
+                assert_se(utf8_encoded_to_unichar(i, &c) == r);
 
                 int w = unichar_iswide(c) ? 2 : 1;
                 if (k + w > x)
@@ -431,9 +460,9 @@ char* ellipsize_mem(const char *s, size_t old_length, size_t new_length, unsigne
                         continue;
                 }
 
-                tt = utf8_prev_char(t);
-                r = utf8_encoded_to_unichar(tt, &c);
-                if (r < 0)
+                /* Find the previous complete UTF-8 character inside the retained suffix. */
+                tt = find_previous_unichar(i, t, &c);
+                if (!tt)
                         return NULL;
 
                 w = unichar_iswide(c) ? 2 : 1;
@@ -451,11 +480,21 @@ char* ellipsize_mem(const char *s, size_t old_length, size_t new_length, unsigne
         if (k >= new_length) {
                 /* Make space for ellipsis, if required and possible. We know that the edge character is not
                  * part of an ANSI sequence (because then we'd skip it). If the last character we looked at
-                 * was wide, we don't need to make space. */
-                if (j < s + old_length)
-                        j = utf8_next_char(j);
-                else if (i > s)
-                        i = utf8_prev_char(i);
+                 * was wide, we don't need to make space.
+                 * Move the edge by one complete UTF-8 character within the input slice. */
+                if (j < s + old_length) {
+                        r = utf8_encoded_valid_unichar(j, s + old_length - j);
+                        if (r < 0)
+                                return NULL;
+
+                        j += r;
+                } else if (i > s) {
+                        const char *tt = find_previous_unichar(s, i, NULL);
+                        if (!tt)
+                                return NULL;
+
+                        i = tt;
+                }
         }
 
         len = i - s;
@@ -1137,11 +1176,17 @@ bool string_is_safe(const char *p, StringSafeFlags flags) {
                 if (!FLAGS_SET(flags, STRING_ALLOW_GLOBS) && strchr(GLOB_CHARS, *t))
                         return false;
 
+                if (FLAGS_SET(flags, STRING_DISALLOW_WHITESPACE) && strchr(WHITESPACE, *t))
+                        return false;
+
                 if (FLAGS_SET(flags, STRING_ASCII) && (uint8_t) *t >= 0x80)
                         return false;
         }
 
         if (FLAGS_SET(flags, STRING_FILENAME) && !filename_is_valid(p))
+                return false;
+
+        if (FLAGS_SET(flags, STRING_FILENAME_PART) && !filename_part_is_valid(p))
                 return false;
 
         return true;
@@ -1375,6 +1420,23 @@ size_t strspn_from_end(const char *str, const char *accept) {
                 n++;
 
         return n;
+}
+
+size_t strnspn(const char *str, const char *accept, size_t n) {
+        size_t i;
+
+        /* Like strspn(), but reads at most 'n' bytes from 'str'. Returns the length of the initial
+         * run of 'str' (capped at 'n') that consists solely of bytes found in 'accept'. Stops at a
+         * NUL byte too. Unlike strspn() this is safe on a buffer that is not NUL terminated within
+         * 'n' bytes. */
+
+        assert(str || n == 0);
+        assert(accept);
+
+        for (i = 0; i < n && str[i] != '\0' && strchr(accept, str[i]); i++)
+                ;
+
+        return i;
 }
 
 char* strdupspn(const char *a, const char *accept) {

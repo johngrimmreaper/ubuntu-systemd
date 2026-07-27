@@ -1269,6 +1269,26 @@ TEST(strspn_from_end) {
         assert_se(strspn_from_end("aaa12aa34", DIGITS) == 2);
 }
 
+TEST(strnspn) {
+        assert_se(strnspn(NULL, WHITESPACE, 0) == 0);
+        assert_se(strnspn("", WHITESPACE, 0) == 0);
+        assert_se(strnspn("hoge", WHITESPACE, 0) == 0);
+        assert_se(strnspn("hoge", WHITESPACE, 4) == 0);
+        assert_se(strnspn("   hoge", WHITESPACE, 7) == 3);
+        assert_se(strnspn("   hoge", WHITESPACE, 2) == 2);
+        assert_se(strnspn("    ", WHITESPACE, 4) == 4);
+
+        /* 'str' is all whitespace and not NUL terminated within 'n': at most 'n' bytes may be read,
+         * otherwise this reads off the end of the buffer (caught by the sanitizers). */
+        for (size_t n = 1; n <= 64; n++) {
+                _cleanup_free_ char *str = NULL;
+
+                assert_se(str = new(char, n));
+                memset(str, ' ', n);
+                assert_se(strnspn(str, WHITESPACE, n) == n);
+        }
+}
+
 TEST(streq_skip_trailing_chars) {
         /* NULL is WHITESPACE by default */
         assert_se(streq_skip_trailing_chars("foo bar", "foo bar", NULL));
@@ -1617,6 +1637,35 @@ TEST(string_is_safe) {
         ASSERT_FALSE(string_is_safe("/", STRING_FILENAME));
         ASSERT_FALSE(string_is_safe("/foo", STRING_FILENAME));
         ASSERT_FALSE(string_is_safe("foo/bar", STRING_FILENAME));
+
+        /* STRING_DISALLOW_WHITESPACE: rejects whitespace (space, tab, newline, carriage return). */
+        ASSERT_TRUE(string_is_safe("hello", STRING_DISALLOW_WHITESPACE));
+        ASSERT_TRUE(string_is_safe("foo-bar_baz", STRING_DISALLOW_WHITESPACE));
+        ASSERT_TRUE(string_is_safe("über", STRING_DISALLOW_WHITESPACE));     /* valid UTF-8 still allowed */
+        ASSERT_TRUE(string_is_safe("hello world", 0));                       /* space accepted by default */
+        ASSERT_FALSE(string_is_safe("hello world", STRING_DISALLOW_WHITESPACE)); /* but not with the flag */
+        ASSERT_FALSE(string_is_safe(" ", STRING_DISALLOW_WHITESPACE));
+        ASSERT_FALSE(string_is_safe("foo ", STRING_DISALLOW_WHITESPACE));
+        ASSERT_FALSE(string_is_safe(" foo", STRING_DISALLOW_WHITESPACE));
+        ASSERT_FALSE(string_is_safe("a\tb", STRING_DISALLOW_WHITESPACE));
+        ASSERT_FALSE(string_is_safe("a\rb", STRING_DISALLOW_WHITESPACE));
+        /* The flag overrides STRING_ALLOW_NEWLINES for the newline character, which is whitespace too. */
+        ASSERT_TRUE(string_is_safe("a\nb", STRING_ALLOW_NEWLINES));
+        ASSERT_FALSE(string_is_safe("a\nb", STRING_ALLOW_NEWLINES | STRING_DISALLOW_WHITESPACE));
+
+        /* STRING_FILENAME_PART: like STRING_FILENAME, but "." and ".." are accepted; '/' still rejected. */
+        ASSERT_TRUE(string_is_safe("hello", STRING_FILENAME_PART));
+        ASSERT_TRUE(string_is_safe("hello.txt", STRING_FILENAME_PART));
+        ASSERT_TRUE(string_is_safe("...", STRING_FILENAME_PART));
+        ASSERT_TRUE(string_is_safe(".hidden", STRING_FILENAME_PART));
+        ASSERT_TRUE(string_is_safe(".", STRING_FILENAME_PART));             /* accepted, unlike STRING_FILENAME */
+        ASSERT_TRUE(string_is_safe("..", STRING_FILENAME_PART));            /* accepted, unlike STRING_FILENAME */
+        ASSERT_FALSE(string_is_safe("", STRING_FILENAME_PART));             /* empty still rejected by default */
+        ASSERT_TRUE(string_is_safe("", STRING_FILENAME_PART | STRING_ALLOW_EMPTY)); /* ... unless explicitly allowed */
+        ASSERT_FALSE(string_is_safe("/", STRING_FILENAME_PART));
+        ASSERT_FALSE(string_is_safe("/foo", STRING_FILENAME_PART));
+        ASSERT_FALSE(string_is_safe("foo/bar", STRING_FILENAME_PART));
+        ASSERT_FALSE(string_is_safe("foo/", STRING_FILENAME_PART));
 
         /* Pairwise combinations. */
         ASSERT_TRUE(string_is_safe("", STRING_ALLOW_EMPTY | STRING_ASCII));

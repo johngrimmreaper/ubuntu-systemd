@@ -610,6 +610,8 @@ int get_credential_host_secret(CredentialSecretFlags flags, struct iovec *ret) {
                 /* Hmm, this secret is from somewhere else. Let's delete the file. Let's first acquire a lock
                  * to ensure we are the only ones accessing the file while we delete it. */
 
+                log_notice("'%s/%s' comes from a different machine ID, deleting.", dirname, filename);
+
                 if (flock(fd, LOCK_EX) < 0)
                         return log_debug_errno(errno,
                                                "Failed to flock %s/%s: %m", dirname, filename);
@@ -858,8 +860,8 @@ int encrypt_credential_and_warn(
         if (name && !credential_name_valid(name))
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Invalid credential name: %s", name);
 
-        if (not_after != USEC_INFINITY && timestamp != USEC_INFINITY && not_after < timestamp)
-                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Credential is invalidated before it is valid (" USEC_FMT " < " USEC_FMT ").", not_after, timestamp);
+        if (not_after != USEC_INFINITY && timestamp != USEC_INFINITY && not_after <= timestamp)
+                return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "Credential is invalidated before or when it becomes valid (" USEC_FMT " <= " USEC_FMT ").", not_after, timestamp);
 
         if (DEBUG_LOGGING) {
                 char buf[FORMAT_TIMESTAMP_MAX];
@@ -989,16 +991,16 @@ int encrypt_credential_and_warn(
                                 return log_error_errno(r, "Failed to seal to TPM2: %m");
 
                         log_notice_errno(r, "TPM2 sealing didn't work, continuing without TPM2: %m");
+                } else {
+                        if (!iovec_memdup(&IOVEC_MAKE(tpm2_policy.buffer, tpm2_policy.size), &tpm2_policy_hash))
+                                return log_oom();
+
+                        assert(n_blobs == 1);
+                        tpm2_blob = TAKE_STRUCT(blobs[0]);
+
+                        assert(tpm2_blob.iov_len <= CREDENTIAL_FIELD_SIZE_MAX);
+                        assert(tpm2_policy_hash.iov_len <= CREDENTIAL_FIELD_SIZE_MAX);
                 }
-
-                if (!iovec_memdup(&IOVEC_MAKE(tpm2_policy.buffer, tpm2_policy.size), &tpm2_policy_hash))
-                        return log_oom();
-
-                assert(n_blobs == 1);
-                tpm2_blob = TAKE_STRUCT(blobs[0]);
-
-                assert(tpm2_blob.iov_len <= CREDENTIAL_FIELD_SIZE_MAX);
-                assert(tpm2_policy_hash.iov_len <= CREDENTIAL_FIELD_SIZE_MAX);
         }
 #endif
 
@@ -1398,6 +1400,8 @@ int decrypt_credential_and_warn(
                                 &tpm2_key);
                 if (r == -EREMOTE)
                         return log_error_errno(r, "TPM key integrity check failed. Key most likely does not belong to this TPM.");
+                if (r == -EADDRNOTAVAIL)
+                        return log_error_errno(r, "NV index referenced by key is missing, unwritten, or unusable, it could be for another system.");
                 if (ERRNO_IS_NEG_TPM2_UNSEAL_BAD_PCR(r))
                         return log_error_errno(r, "TPM policy does not match current system state. Either system has been tempered with or policy out-of-date: %m");
                 if (r < 0)
@@ -1847,6 +1851,7 @@ static const CredentialsVarlinkError credentials_varlink_error_table[] = {
         { "io.systemd.Credentials.KeyBelongsToOtherTPM",   EREMOTE,      "The TPM integrity check for this key failed, key probably belongs to another TPM, or was corrupted." },
         { "io.systemd.Credentials.TPMInDictionaryLockout", ENOLCK,       "The TPM is in dictionary lockout mode, cannot operate." },
         { "io.systemd.Credentials.UnexpectedPCRState" ,    EUCLEAN,      "Unexpected TPM PCR state of the system." },
+        { "io.systemd.Credentials.NVIndexUnusable",        EADDRNOTAVAIL, "The NV index referenced by the key is missing, unwritten, or unusable, it could be for another system." },
 };
 
 const CredentialsVarlinkError* credentials_varlink_error_by_id(const char *id) {

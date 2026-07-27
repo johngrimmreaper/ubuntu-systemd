@@ -44,6 +44,15 @@ static inline bool TPM2_PCR_MASK_VALID(uint32_t pcr_mask) {
 
 int dlopen_tpm2(int log_level);
 
+/* tpm2_unseal() returns a bunch of different errors for various flavours of PCR issues, let's group them.
+ * Kept outside the HAVE_TPM2 guard as callers switch on these errnos even in builds without TPM2. */
+#define ERRNO_IS_NEG_TPM2_UNSEAL_BAD_PCR(r) IN_SET(r, -EREMCHG, -ENOANO, -EUCLEAN, -EPERM)
+
+/* Errors that mean the tried TPM2 token does not match the boot state, be it due to wrong PCR state, a
+ * different PCR signing key/policy, a different TPM, or an unusable NV index. The caller should keep trying
+ * other tokens. */
+#define ERRNO_IS_NEG_TPM2_TOKEN_MISMATCH(r) IN_SET(r, -EREMCHG, -ENOANO, -EPERM, -ENOSTR, -EREMOTE, -EADDRNOTAVAIL)
+
 #if HAVE_TPM2
 #define TPM2_ESYS_NOTE(priority) \
         SD_ELF_NOTE_DLOPEN("tpm", "Support for TPM", priority, "libtss2-esys.so.0")
@@ -192,7 +201,7 @@ int tpm2_pcr_extend_bytes(Tpm2Context *c, char **banks, unsigned pcr_index, cons
 #define TPM2_NVPCR_PRIORITY_DEFAULT UINT64_C(1000)
 
 int tpm2_nvpcr_get_index(const char *name, uint32_t *ret_nv_index, uint64_t *ret_priority);
-int tpm2_nvpcr_extend_bytes(Tpm2Context *c, const Tpm2Handle *session, const char *name, const struct iovec *data, const struct iovec *secret, Tpm2UserspaceEventType event_type, const char *description);
+int tpm2_nvpcr_extend_bytes(Tpm2Context *c, const Tpm2Handle *session, const char *name, const struct iovec *data, const struct iovec *secret, bool sync_secondary_anchor, Tpm2UserspaceEventType event_type, const char *description);
 int tpm2_nvpcr_acquire_anchor_secret(struct iovec *ret, bool sync_secondary);
 int tpm2_nvpcr_initialize(Tpm2Context *c, const Tpm2Handle *session, const char *name, const struct iovec *anchor_secret);
 int tpm2_nvpcr_read(Tpm2Context *c, const Tpm2Handle *session, const char *name, struct iovec *ret, uint32_t *ret_nv_index, uint64_t *ret_priority);
@@ -347,8 +356,9 @@ int tpm2_get_or_create_srk(Tpm2Context *c, const Tpm2Handle *session, TPM2B_PUBL
 int tpm2_seal(Tpm2Context *c, uint32_t seal_key_handle, const TPM2B_DIGEST policy_hash[], size_t n_policy, const char *pin, struct iovec *ret_secret, struct iovec **ret_blobs, size_t *ret_n_blobs, uint16_t *ret_primary_alg, struct iovec *ret_srk);
 int tpm2_unseal(Tpm2Context *c, uint32_t hash_pcr_mask, uint16_t pcr_bank, const struct iovec *pubkey, uint32_t pubkey_pcr_mask, sd_json_variant *signature, const char *pin, const Tpm2PCRLockPolicy *pcrlock_policy, uint16_t primary_alg, const struct iovec blobs[], size_t n_blobs, const struct iovec known_policy_hash[], size_t n_known_policy_hash, const struct iovec *srk, struct iovec *ret_secret);
 
-/* tpm2_unseal() returns a bunch of different errors for various flavours of PCR issues, let's group them */
-#define ERRNO_IS_NEG_TPM2_UNSEAL_BAD_PCR(r) IN_SET(r, -EREMCHG, -ENOANO, -EUCLEAN, -EPERM)
+/* On load/import the return codes mean the key was wrapped for a different parent (INTEGRITY) or used a
+ * different template (SIZE), so it's probably not for our TPM. */
+#define TPM2_RC_IS_FOREIGN_KEY(rc) IN_SET((rc) & ~(TPM2_RC_N_MASK|TPM2_RC_P), TPM2_RC_INTEGRITY, TPM2_RC_SIZE)
 
 #if HAVE_OPENSSL
 int tpm2_tpm2b_public_to_openssl_pkey(const TPM2B_PUBLIC *public, EVP_PKEY **ret);

@@ -1137,20 +1137,15 @@ static int measure_keyslot(
         if (!s)
                 return log_oom();
 
-        r = tpm2_nvpcr_extend_bytes(c, /* session= */ NULL, arg_tpm2_measure_keyslot_nvpcr, &IOVEC_MAKE_STRING(s), /* secret= */ NULL, TPM2_EVENT_KEYSLOT, s);
-        if (r == -ENETDOWN) {
-                /* NvPCR is not initialized yet. Do so now. */
-                _cleanup_(iovec_done_erase) struct iovec anchor_secret = {};
-                r = tpm2_nvpcr_acquire_anchor_secret(&anchor_secret, /* sync_secondary= */ false);
-                if (r < 0)
-                        return r;
-
-                r = tpm2_nvpcr_initialize(c, /* session= */ NULL, arg_tpm2_measure_keyslot_nvpcr, &anchor_secret);
-                if (r < 0)
-                        return log_error_errno(r, "Failed to extend NvPCR index '%s' with anchor secret: %m", name);
-
-                r = tpm2_nvpcr_extend_bytes(c, /* session= */ NULL, arg_tpm2_measure_keyslot_nvpcr, &IOVEC_MAKE_STRING(s), /* secret= */ NULL, TPM2_EVENT_KEYSLOT, s);
-        }
+        r = tpm2_nvpcr_extend_bytes(
+                        c,
+                        /* session= */ NULL,
+                        arg_tpm2_measure_keyslot_nvpcr,
+                        &IOVEC_MAKE_STRING(s),
+                        /* secret= */ NULL,
+                        /* sync_secondary_anchor= */ false,
+                        TPM2_EVENT_KEYSLOT,
+                        s);
         if (r < 0)
                 return log_error_errno(r, "Could not extend NvPCR: %m");
 
@@ -2177,7 +2172,10 @@ static int attach_luks_or_plain_or_bitlk_by_tpm2(
                                                 &decrypted_key);
                                 if (IN_SET(r, -EACCES, -ENOLCK))
                                         return log_notice_errno(SYNTHETIC_ERRNO(EAGAIN), "TPM2 PIN unlock failed, falling back to traditional unlocking.");
-                                if (r != -EPERM)
+                                /* Stop unless we should keep iterating to next token because the tried one
+                                 * does not match boot state. For now without -EUCLEAN because currently the
+                                 * only error it reports won't be solved by moving to another token. */
+                                if (!ERRNO_IS_NEG_TPM2_TOKEN_MISMATCH(r))
                                         break;
 
                                 token++; /* try a different token next time */

@@ -372,21 +372,17 @@ static int extend_nvpcr_now(
 
         log_debug("Measuring '%s' into NvPCR index '%s'.", safe, name);
 
-        r = tpm2_nvpcr_extend_bytes(c, /* session= */ NULL, name, &IOVEC_MAKE(data, size), /* secret= */ NULL, event, safe);
-        if (r == -ENETDOWN) {
-                /* NvPCR is not initialized yet. Let's do this now. */
-
-                _cleanup_(iovec_done_erase) struct iovec anchor_secret = {};
-                r = tpm2_nvpcr_acquire_anchor_secret(&anchor_secret, /* sync_secondary= */ !arg_early);
-                if (r < 0)
-                        return r;
-
-                r = tpm2_nvpcr_initialize(c, /* session= */ NULL, name, &anchor_secret);
-                if (r < 0)
-                        return log_error_errno(r, "Failed to extend NvPCR index '%s' with anchor secret: %m", name);
-
-                r = tpm2_nvpcr_extend_bytes(c, /* session= */ NULL, name, &IOVEC_MAKE(data, size), /* secret= */ NULL, event, safe);
-        }
+        r = tpm2_nvpcr_extend_bytes(
+                        c,
+                        /* session= */ NULL,
+                        name,
+                        &IOVEC_MAKE(data, size),
+                        /* secret= */ NULL,
+                        /* sync_secondary_anchor= */ !arg_early,
+                        event,
+                        safe);
+        if (r == -ENOBUFS)
+                return r; /* NV space exhausted; let caller handle gracefully */
         if (r < 0)
                 return log_error_errno(r, "Could not extend NvPCR: %m");
 
@@ -470,6 +466,8 @@ static int vl_method_extend(sd_varlink *link, sd_json_variant *parameters, sd_va
                 r = extend_nvpcr_now(p.nvpcr, extend_iovec->iov_base, extend_iovec->iov_len, p.event_type);
                 if (IN_SET(r, -ENOENT, -ENODEV))
                         return sd_varlink_error(link, "io.systemd.PCRExtend.NoSuchNvPCR", NULL);
+                if (r == -ENOBUFS)
+                        return sd_varlink_error(link, "io.systemd.PCRExtend.NvPCRSpaceExhausted", NULL);
         } else
                 r = extend_pcr_now(INDEX_TO_MASK(uint32_t, p.pcr), extend_iovec->iov_base, extend_iovec->iov_len, p.event_type);
         if (r < 0)
@@ -607,6 +605,10 @@ static int run(int argc, char *argv[]) {
          * suppressed. */
         if (arg_graceful && r == -EOPNOTSUPP) {
                 log_notice_errno(r, "TPM2 cannot be used for measurement (no usable PCR bank, missing device, or missing crypto support), skipping gracefully.");
+                return EXIT_SUCCESS;
+        }
+        if (arg_graceful && r == -ENOBUFS) {
+                log_notice_errno(r, "TPM NV index space is exhausted, NvPCR '%s' could not be initialized, skipping gracefully.", arg_nvpcr_name);
                 return EXIT_SUCCESS;
         }
         if (r < 0)

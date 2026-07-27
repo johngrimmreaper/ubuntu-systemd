@@ -2566,10 +2566,10 @@ static int create_device(
                 }
         }
 
-        log_debug("%s %s device node \"%s\" %u:%u.",
+        log_debug("%s %s device node \"%s\" " DEVNUM_FORMAT_STR ".",
                   creation_mode_verb_to_string(creation),
                   i->type == CREATE_BLOCK_DEVICE ? "block" : "char",
-                  i->path, major(i->mode), minor(i->mode));
+                  i->path, DEVNUM_FORMAT_VAL(i->major_minor));
 
         return fd_set_perms(c, i, fd, i->path, &st, creation);
 
@@ -2894,10 +2894,9 @@ static int glob_item_recursively(
                 /* Make sure we won't trigger/follow file object (such as device nodes, automounts, ...)
                  * pointed out by 'fn' with O_PATH. Note, when O_PATH is used, flags other than
                  * O_CLOEXEC, O_DIRECTORY, and O_NOFOLLOW are ignored. */
-
-                fd = open(*fn, O_CLOEXEC|O_NOFOLLOW|O_PATH);
+                fd = path_open_safe(*fn);
                 if (fd < 0) {
-                        RET_GATHER(r, log_error_errno(errno, "Failed to open '%s': %m", *fn));
+                        RET_GATHER(r, fd);
                         continue;
                 }
 
@@ -3483,8 +3482,7 @@ static int clean_item(Context *c, Item *i) {
         case CREATE_SUBVOLUME_INHERIT_QUOTA:
         case CREATE_SUBVOLUME_NEW_QUOTA:
         case COPY_FILES:
-                clean_item_instance(c, i, i->path, CREATION_EXISTING);
-                return 0;
+                return clean_item_instance(c, i, i->path, CREATION_EXISTING);
 
         case EMPTY_DIRECTORY:
         case IGNORE_PATH:
