@@ -73,3 +73,4 @@ CVE-2026-40226-2.patch
 CVE-2026-16742/homed-fix-verification-of-local-identity-file.patch
 CVE-2026-16742/homed-verify-privileged-worker-changes.patch
 CVE-2026-15059.patch
+GHSA-5rm9-cc37-35gq.patch
