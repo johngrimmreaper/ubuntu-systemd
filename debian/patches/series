@@ -1,4 +1,3 @@
 lp2064096-switch-root-use-MS_MOVE-for-run-when-switchig-from-initrd.patch
 test-use-gnuenv-to-workaround-broken-block-signal.patch
-test-reduce-number-of-disks-in-TEST-64-UDEV-STORAGE-simul.patch
 mkosi-pull-new-split-out-packages-for-deb-ubuntu.patch
