@@ -1,0 +1,77 @@
+From: Nick Rosbrook <enr0n@ubuntu.com>
+Date: Wed, 8 Jul 2026 09:15:37 -0400
+Subject: meson: add build option for /var/log mode
+
+Origin: upstream, https://github.com/systemd/systemd/commit/f195b1c1a845561bb819fd17338ffa7383154c84
+Bug-Ubuntu: https://launchpad.net/bugs/2158686
+
+In Ubuntu, rsyslog is (a) part of the minimal image and (b) does not run
+as root. To facilitate this, the rsyslog package configures /var/log
+to be writeable by the syslog group.
+
+There are currently conflicts in the Ubuntu packaging due to the way
+tmpfiles are handled in package scripts: when systemd-tmpfiles is
+invoked with both configurations (or for all configurations), things
+work fine. But if invoked with only var.conf, which is the default case
+for package upgrades, rsyslog is broken.
+
+One suggestion to approach this was to make rsyslog's tmpfile
+configuration use ACLs instead of trying to change the owning group and
+directory mode. This can work, but since the ACL mask is stored in the
+group permission bits, the effective mask for rsyslog becomes r-x again
+when var.conf is invoked, because it sees that 0775 != 0755, and chmods
+the directory.
+
+Hence, for /var/log write permisssions to be extendable with ACLs,
+the mode must be at least 0775. Rather than change the default,
+add a build option to configure the /var/log mode.
+
+(cherry picked from commit f195b1c1a845561bb819fd17338ffa7383154c84)
+---
+ meson.build            | 3 +++
+ meson_options.txt      | 4 ++++
+ tmpfiles.d/var.conf.in | 2 +-
+ 3 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index 438ce4f..1f365a9 100644
+--- a/meson.build
++++ b/meson.build
+@@ -942,6 +942,9 @@ endif
+ # Do not use set_quoted() here, so that the value is available as an integer.
+ conf.set('TTY_MODE', tty_mode)
+ 
++var_log_mode = get_option('var-log-mode')
++conf.set_quoted('VAR_LOG_MODE', var_log_mode)
++
+ kill_user_processes = get_option('default-kill-user-processes')
+ conf.set10('KILL_USER_PROCESSES', kill_user_processes)
+ 
+diff --git a/meson_options.txt b/meson_options.txt
+index b5856dd..fbe3a08 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -349,6 +349,10 @@ option('group-render-mode', type : 'string', value : '0666',
+        description : 'Access mode for devices owned by render group (e.g. /dev/dri/renderD*, /dev/kfd).')
+ option('tty-mode', type : 'string', value : '0600',
+        description : 'Access mode for tty/pts device nodes.')
++option('var-log-mode', type : 'combo',
++       description : 'Access mode for /var/log directory.',
++       choices : ['0755', '0775'],
++       value : '0755')
+ option('default-kill-user-processes', type : 'boolean',
+        description : 'the default value for KillUserProcesses= setting')
+ option('gshadow', type : 'boolean',
+diff --git a/tmpfiles.d/var.conf.in b/tmpfiles.d/var.conf.in
+index 8e1a9c0..2da8a36 100644
+--- a/tmpfiles.d/var.conf.in
++++ b/tmpfiles.d/var.conf.in
+@@ -11,7 +11,7 @@ q /var 0755 - - -
+ 
+ L /var/run - - - - ../run
+ 
+-d /var/log 0755 - - -
++d /var/log {{VAR_LOG_MODE}} - - -
+ {% if ENABLE_UTMP %}
+ f /var/log/wtmp 0664 root utmp -
+ f /var/log/btmp 0660 root utmp -
