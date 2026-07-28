@@ -1,3 +1,30 @@
+systemd (255.4-1ubuntu8.17) noble-security; urgency=medium
+
+  * SECURITY UPDATE: systemd-homed: local privilege escalation via missing home-record signature verification on the authenticate path
+    - homed-fix-verification-of-local-identity-file.patch
+    - homed-verify-privileged-worker-changes.patch
+    - CVE-2026-16742
+  * SECURITY UPDATE: systemd-oomd: unprivileged users can terminate arbitrary processes
+    - CVE-2026-15059.patch
+    - CVE-2026-15059
+  * SECURITY UPDATE: systemd: crash triggered by unprivileged users in various components via Varlink
+    - GHSA-5rm9-cc37-35gq.patch
+    - GHSA-5rm9-cc37-35gq
+  * SECURITY UPDATE: udev: local root execution via malicious iscsi devices and unsanitized kernel output
+    - GHSA-m8q3-73v4-wvg7.patch
+    - GHSA-m8q3-73v4-wvg7
+  * SECURITY UPDATE: crash triggered by unprivileged users in various components via D-Bus/Varlink
+    - core-limit-the-number-of-units-that-can-be-requested-over.patch
+    - dbus-limit-the-number-of-env-variables-to-something-reaso.patch
+    - dbus-manager-limit-the-number-of-states-patterns-per-quer.patch
+    - resolve-enforce-the-search-domain-limit-earlier.patch
+    - resolve-limit-the-number-NTAs-to-something-sensible.patch
+    - sd-bus-store-the-strv-size-when-extending-it.patch
+    - sd-json-user-record-store-the-strv-size-when-extending-it.patch
+    - GHSA-3jgj-3phh-hx5j
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Tue, 28 Jul 2026 11:04:45 -0400
+
 systemd (255.4-1ubuntu8.16) noble-security; urgency=medium
 
   * SECURITY UPDATE: escape-to-host via malformed optional config file
