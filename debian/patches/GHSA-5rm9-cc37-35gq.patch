@@ -1,0 +1,111 @@
+From: Frantisek Sumsal <frantisek@sumsal.cz>
+Date: Fri, 10 Apr 2026 17:20:03 +0200
+Subject: sd-json: limit the stack depth during parsing as well
+
+Origin: upstream, https://github.com/systemd/systemd-stable/commit/958aefc3a5b23850b868190dc693e6f735309ecb
+
+(cherry picked from commit 1016dd315f94917cd0818a90bc09c99ef76ab556)
+(cherry picked from commit 23bb1e8555fd92162ce10b0b394f79d69f39f404)
+(cherry picked from commit 958aefc3a5b23850b868190dc693e6f735309ecb)
+
+(modified for backport to 255.4)
+(modified for backport to 249.11)
+---
+ src/shared/json.c    | 12 ++++++++++++
+ src/test/test-json.c | 46 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+)
+
+diff --git a/src/shared/json.c b/src/shared/json.c
+index d72b1e3..26bc9b1 100644
+--- a/src/shared/json.c
++++ b/src/shared/json.c
+@@ -2939,6 +2939,12 @@ static int json_parse_internal(
+                                 goto finish;
+                         }
+ 
++                        /* n_stack includes the top level entry, hence > instead of >= */
++                        if (n_stack > DEPTH_MAX) {
++                                r = -ELNRNG;
++                                goto finish;
++                        }
++
+                         if (!GREEDY_REALLOC(stack, n_stack+1)) {
+                                 r = -ENOMEM;
+                                 goto finish;
+@@ -2990,6 +2996,12 @@ static int json_parse_internal(
+                                 goto finish;
+                         }
+ 
++                        /* n_stack includes the top level entry, hence > instead of >= */
++                        if (n_stack > DEPTH_MAX) {
++                                r = -ELNRNG;
++                                goto finish;
++                        }
++
+                         if (!GREEDY_REALLOC(stack, n_stack+1)) {
+                                 r = -ENOMEM;
+                                 goto finish;
+diff --git a/src/test/test-json.c b/src/test/test-json.c
+index 1d4b119..fb06fe7 100644
+--- a/src/test/test-json.c
++++ b/src/test/test-json.c
+@@ -431,6 +431,51 @@ static void test_depth(void) {
+         fputs("\n", stdout);
+ }
+ 
++static char *prepare_nested_json(const char *open, unsigned depth) {
++        char *s, *p;
++        size_t olen;
++
++        assert_se(open);
++
++        olen = strlen(open);
++        s = p = new(char, olen * depth + 1);
++        if (!s)
++                return NULL;
++
++        for (unsigned i = 0; i < depth; i++)
++                p = mempcpy(p, open, olen);
++        *p = '\0';
++
++        return s;
++}
++
++static void test_parse_depth(void) {
++        log_info("/* %s */", __func__);
++
++        _cleanup_(json_variant_unrefp) JsonVariant *v = NULL;
++        _cleanup_free_ char *s = NULL;
++
++        /* Refuse parsing > DEPTH_MAX (currently 2048) levels of nested arrays */
++        s = prepare_nested_json("[", 2049);
++        assert_se(json_parse(s, 0, &v, NULL, NULL) == -ELNRNG);
++        s = mfree(s);
++
++        /* Same for nested objects */
++        s = prepare_nested_json("{\"a\":", 2049);
++        assert_se(json_parse(s, 0, &v, NULL, NULL) == -ELNRNG);
++        s = mfree(s);
++
++        /* <= DEPTH_MAX levels of nested arrays should be refused by EINVAL
++         * later in the parsing process */
++        s = prepare_nested_json("[", 2048);
++        assert_se(json_parse(s, 0, &v, NULL, NULL) == -EINVAL);
++        s = mfree(s);
++
++        /* And the same for nested objects */
++        s = prepare_nested_json("{\"a\":", 2048);
++        assert_se(json_parse(s, 0, &v, NULL, NULL) == -EINVAL);
++}
++
+ static void test_normalize(void) {
+         log_info("/* %s */", __func__);
+ 
+@@ -570,6 +615,7 @@ int main(int argc, char *argv[]) {
+         test_build();
+         test_source();
+         test_depth();
++        test_parse_depth();
+ 
+         test_normalize();
+         test_bisect();

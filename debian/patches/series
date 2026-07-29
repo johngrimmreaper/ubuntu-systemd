@@ -149,3 +149,4 @@ lp2133220-network-support-ID_NET_MANAGED_BY-udev-property.patch
 CVE-2023-7008.patch
 CVE-2026-40226-1.patch
 CVE-2026-40226-2.patch
+GHSA-5rm9-cc37-35gq.patch
