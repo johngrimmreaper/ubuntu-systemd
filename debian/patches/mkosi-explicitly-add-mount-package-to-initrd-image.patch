@@ -1,0 +1,17 @@
+From: Nick Rosbrook <enr0n@ubuntu.com>
+Date: Mon, 31 Aug 2026 10:07:38 -0400
+Subject: mkosi: explicitly add mount package to initrd image
+
+---
+ mkosi/mkosi.initrd.conf/mkosi.conf.d/debian-ubuntu.conf | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mkosi/mkosi.initrd.conf/mkosi.conf.d/debian-ubuntu.conf b/mkosi/mkosi.initrd.conf/mkosi.conf.d/debian-ubuntu.conf
+index 17b8638..b747680 100644
+--- a/mkosi/mkosi.initrd.conf/mkosi.conf.d/debian-ubuntu.conf
++++ b/mkosi/mkosi.initrd.conf/mkosi.conf.d/debian-ubuntu.conf
+@@ -22,3 +22,4 @@ VolatilePackages=
+         systemd-repart
+         systemd-tpm
+         udev
++        mount
