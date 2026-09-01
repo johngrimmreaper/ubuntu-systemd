@@ -530,7 +530,6 @@ usr/share/zsh/vendor-completions/_varlinkctl
 ../extra/tmpfiles.d/*.conf usr/lib/tmpfiles.d/
 ../extra/kernel-install.d/* usr/lib/kernel/install.d/
 ../extra/pam.d/* usr/lib/pam.d/
-../extra/journald.conf.d usr/lib/systemd/
 ../extra/units/getty-static.service usr/lib/systemd/system/
 ../extra/units/systemd-fsck-root.service.d/ usr/lib/systemd/system/
 ../extra/units/systemd-localed.service.d usr/lib/systemd/system/

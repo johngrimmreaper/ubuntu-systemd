@@ -123,6 +123,7 @@ Conflicts: consolekit,
 Breaks: less (<< 563),
         sicherboot (<< 0.1.6),
         dracut-core (<< 102-2~),
+        rsyslog (<< 8.2608.0-4ubuntu2~),
 Provides: systemd-sysusers (= ${binary:Version}),
           systemd-tmpfiles (= ${binary:Version}),
 Description: system and service manager
