@@ -6,9 +6,5 @@
 # https://github.com/systemd/systemd/commit/da2617378523e007ec0c6efe99d0cebb2be994e1
 /dev/null /usr/lib/systemd/system/hwclock.service
 
-# We use the built-in cryptsetup support
-/dev/null /usr/lib/systemd/system/cryptdisks.service
-/dev/null /usr/lib/systemd/system/cryptdisks-early.service
-
 # Enable Debian specific units
 /usr/lib/systemd/system/getty-static.service /usr/lib/systemd/system/getty.target.wants/getty-static.service
