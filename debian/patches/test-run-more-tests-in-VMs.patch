@@ -1,0 +1,31 @@
+From: Nick Rosbrook <enr0n@ubuntu.com>
+Date: Thu, 3 Sep 2026 09:53:56 -0400
+Subject: test: run more tests in VMs
+
+---
+ test/integration-tests/TEST-34-DYNAMICUSERMIGRATE/meson.build | 1 +
+ test/integration-tests/TEST-43-PRIVATEUSER-UNPRIV/meson.build | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/test/integration-tests/TEST-34-DYNAMICUSERMIGRATE/meson.build b/test/integration-tests/TEST-34-DYNAMICUSERMIGRATE/meson.build
+index 8dec5f3..77370ce 100644
+--- a/test/integration-tests/TEST-34-DYNAMICUSERMIGRATE/meson.build
++++ b/test/integration-tests/TEST-34-DYNAMICUSERMIGRATE/meson.build
+@@ -3,5 +3,6 @@
+ integration_tests += [
+         integration_test_template + {
+                 'name' : fs.name(meson.current_source_dir()),
++                'vm' : true,
+         },
+ ]
+diff --git a/test/integration-tests/TEST-43-PRIVATEUSER-UNPRIV/meson.build b/test/integration-tests/TEST-43-PRIVATEUSER-UNPRIV/meson.build
+index 8dec5f3..77370ce 100644
+--- a/test/integration-tests/TEST-43-PRIVATEUSER-UNPRIV/meson.build
++++ b/test/integration-tests/TEST-43-PRIVATEUSER-UNPRIV/meson.build
+@@ -3,5 +3,6 @@
+ integration_tests += [
+         integration_test_template + {
+                 'name' : fs.name(meson.current_source_dir()),
++                'vm' : true,
+         },
+ ]
