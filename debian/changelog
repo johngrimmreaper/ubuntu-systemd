@@ -1,3 +1,16 @@
+systemd (261.2-1ubuntu2) stonking; urgency=medium
+
+  * Drop test-use-gnuenv-to-workaround-broken-block-signal.patch.
+    Fixed in rust-coreutils (LP: #2142900)
+  * mkosi: explicitly add mount package to initrd image
+  * d/systemd.links: stop creating cryptdisks{,-early}.service masks (LP: #2153836)
+  * d/extra: stop setting ForwardToSyslog=yes by default (LP: #2147513)
+    Modern syslog implementations should read from the journal directly.
+  * test: run more tests in VMs
+  * d/systemd.links: drop unnecessary x11-common.service mask (LP: #2153937)
+
+ -- Nick Rosbrook <enr0n@ubuntu.com>  Thu, 10 Sep 2026 13:29:41 -0400
+
 systemd (261.2-1ubuntu1) stonking; urgency=medium
 
   * Merge with Debian unstable (LP: #2153359). Remaining changes:
